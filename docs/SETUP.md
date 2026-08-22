@@ -1,7 +1,10 @@
 # AresOS — Установка инструментария (Windows 10/11 + WSL2)
 
-Это пошаговая инструкция: что скачать и какие команды выполнить, чтобы собрать
-окружение для разработки ОС. Выполняется **один раз**.
+Выполняется **один раз**. После этого рабочий цикл: `make` → `make run` → `make debug`.
+
+> Экономия достигнута за счёт собственных инструментов проекта: образ диска делает
+> `tools/mkesp.py` (не нужны mtools/xorriso), загрузчик конвертирует `tools/elf2efi.py`
+> (не нужен gnu-efi), ассемблер — GAS (встроен в gcc, не нужен nasm).
 
 ---
 
@@ -11,147 +14,117 @@
 wsl --install
 ```
 
-Перезагрузи ПК. После перезагрузки откроется Ubuntu — придумай логин/пароль.
-Проверка, что у тебя именно WSL**2**:
+Перезагрузи ПК, в открывшемся терминале Ubuntu придумай логин/пароль.
+Дальше **все команды — внутри Ubuntu (WSL)**.
 
-```powershell
-wsl -l -v
-```
-
-> На **Windows 11** графические окна Linux (включая окно QEMU) работают «из коробки»
-> через WSLg. На **Windows 10** — либо ставь X-сервер (VcXsrv), либо запускай
-> QEMU для Windows (см. раздел «Производительность» внизу).
-
-Дальше **все команды выполняются внутри терминала Ubuntu (WSL)**.
+> **Windows 11**: окно QEMU появится само (WSLg встроен).
+> **Windows 10**: графики WSL нет — ставь X-сервер (VcXsrv) ИЛИ используй QEMU для
+> Windows (раздел «Производительность» ниже). Serial-лог ядра виден и без графики.
 
 ---
 
-## Шаг 1. Базовые пакеты
+## Шаг 1. Клонировать репозиторий
 
 ```bash
-sudo apt update && sudo apt upgrade -y
-
-sudo apt install -y \
-  build-essential bison flex \
-  libgmp3-dev libmpc-dev libmpfr-dev libisl-dev texinfo \
-  nasm make git curl \
-  qemu-system-x86 ovmf mtools xorriso \
-  gdb gdb-multiarch \
-  x86_64-w64-mingw32-gcc
+git clone https://github.com/Poncho435/AresOS.git
+cd AresOS
+git checkout arena/01a02ad5-aresos   # ветка с текущей работой
 ```
 
-Что зачем:
+## Шаг 2. Пакеты (минимум)
+
+```bash
+sudo apt update
+sudo apt install -y build-essential make python3 qemu-system-x86 ovmf
+sudo apt install -y gdb        # для make debug / make gdb
+sudo apt install -y x86_64-w64-mingw32-gcc   # ПОЗЖЕ (этап M8): собирать тестовые .exe
+```
 
 | Пакет | Зачем |
 |---|---|
-| `build-essential`, `make`, `git` | базовая сборка |
-| `bison`, `flex`, `libgmp/mpfr/mpc/isl-dev`, `texinfo` | зависимости для сборки кросс-GCC |
-| `nasm` | ассемблер ( входная точка ядра, context switch ) |
-| `qemu-system-x86` | эмулятор ПК — там будет крутиться AresOS |
-| `ovmf` | прошивка UEFI для QEMU (наш «BIOS») |
-| `mtools`, `xorriso` | создание FAT32-образа диска и ISO без root-прав |
-| `gdb-multiarch` | отладчик для подключения к QEMU |
-| `x86_64-w64-mingw32-gcc` | компилятор **Windows PE .exe** — им мы будем собирать тестовые программы, которые AresOS будет запускать |
+| `build-essential`, `make` | gcc + GNU as + GNU ld + make |
+| `python3` | наши инструменты: `elf2efi.py`, `mkesp.py` |
+| `qemu-system-x86` | эмулятор ПК |
+| `ovmf` | прошивка UEFI для QEMU (файлы `/usr/share/OVMF/*.fd`) |
+| `gdb` | отладка ядра через GDB-stub QEMU |
+| `x86_64-w64-mingw32-gcc` | компилятор Windows PE `.exe` — понадобится на M8 |
 
----
+## Шаг 3 (необязательный). Кросс-компилятор x86_64-elf-gcc
 
-## Шаг 2. Кросс-компилятор x86_64-elf (выбери ОДИН вариант)
-
-### Вариант A (рекомендуемый): собрать кросс-GCC самому
-
-Обычный gcc из Ubuntu «зашивает» зависимости от Linux. Кросс-компилятор
-`x86_64-elf-gcc` собирает чистый freestanding-код без ОС. Сборка занимает
-20–60 минут, делается один раз.
+**Не обязателен:** наш код freestanding, Makefile сам использует host `gcc`.
+Если хочешь «классический» OSDev-тулчейн (чистота + привычка) — собирается так:
 
 ```bash
-export PREFIX="$HOME/opt/cross"
-export TARGET=x86_64-elf
-export PATH="$PREFIX/bin:$PATH"
+sudo apt install -y bison flex libgmp3-dev libmpc-dev libmpfr-dev libisl-dev texinfo
+export PREFIX="$HOME/opt/cross" TARGET=x86_64-elf
 mkdir -p ~/src && cd ~/src
-
-# Возьми последние стабильные версии с ftp.gnu.org, если этих уже нет:
-BINUTILS_VER=2.43
-GCC_VER=14.2.0
-
-# --- Binutils (ассемблер+линкер) ---
+BINUTILS_VER=2.43; GCC_VER=14.2.0
 curl -LO https://ftp.gnu.org/gnu/binutils/binutils-$BINUTILS_VER.tar.xz
-tar xf binutils-$BINUTILS_VER.tar.xz
-mkdir build-binutils && cd build-binutils
+tar xf binutils-$BINUTILS_VER.tar.xz && mkdir build-binutils && cd build-binutils
 ../binutils-$BINUTILS_VER/configure --target=$TARGET --prefix="$PREFIX" \
     --with-sysroot --disable-nls --disable-werror
-make -j$(nproc)
-make install
-cd ~/src
-
-# --- GCC ---
+make -j$(nproc) && make install && cd ~/src
 curl -LO https://ftp.gnu.org/gnu/gcc/gcc-$GCC_VER/gcc-$GCC_VER.tar.xz
-tar xf gcc-$GCC_VER.tar.xz
-mkdir build-gcc && cd build-gcc
+tar xf gcc-$GCC_VER.tar.xz && mkdir build-gcc && cd build-gcc
 ../gcc-$GCC_VER/configure --target=$TARGET --prefix="$PREFIX" \
     --disable-nls --enable-languages=c --without-headers
-make -j$(nproc) all-gcc
-make -j$(nproc) all-target-libgcc
+make -j$(nproc) all-gcc && make -j$(nproc) all-target-libgcc
 make install-gcc install-target-libgcc
+echo 'export PATH="$HOME/opt/cross/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 ```
 
-Добавь в `~/.bashrc`, чтобы не вводить каждый раз:
-
-```bash
-echo 'export PATH="$HOME/opt/cross/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-### Вариант B (быстрый): Clang — он изначально кросс-компилятор
-
-```bash
-sudo apt install -y clang lld llvm
-```
-
-Clang умеет `--target=x86_64-unknown-none` без отдельной сборки. Если выберешь
-вариант B — скажи мне, флаги в Makefile будут чуть другими.
+Makefile сам подхватит `x86_64-elf-gcc`, если он появился в PATH.
 
 ---
 
-## Шаг 3. Проверка окружения
+## Шаг 4. Проверка, сборка, ЗАПУСК
 
 ```bash
-x86_64-elf-gcc --version     # кросс-компилятор
-x86_64-elf-ld --version      # кросс-линкер
-nasm -v                      # ассемблер
-qemu-system-x86_64 --version # эмулятор
-ls /usr/share/OVMF/          # здесь лежат OVMF_CODE.fd / OVMF_VARS.fd (прошивка UEFI)
-x86_64-w64-mingw32-gcc --version  # сборщик тестовых .exe
+cd AresOS
+make tools-check   # все инструменты видны? (OVMF_CODE/OVMF_VARS — не пустые!)
+make               # сборка: ядро → загрузчик → PE → FAT-образ
+make verify        # статическая проверка бинарников
+make run           # ЗАПУСК: окно QEMU + serial-лог в этом терминале
 ```
 
-Если все 6 команд что-то вывели без ошибок — **M0 выполнен**.
+Ожидаемый serial-лог (`-serial stdio`):
 
----
+```
+[boot] AresOS UEFI loader alive
+[boot] KERNEL.ELF read, size = 0x...
+[boot] PT_LOAD dest=0x200000 ...
+[boot] framebuffer base = 0x...
+[boot] ExitBootServices OK — bye, firmware!
+  ============================================
+   A r e s O S   kernel 0.1.0-m2
+  ============================================
+[gdt] GDT loaded ...
+[idt] IDT loaded ...
+[fb] framebuffer console: 1024 x 768 ...
+[mem] usable RAM total: ... MiB
+[pmm] ...
+AresOS init complete (M2). CPU halting; next milestone: M3 VMM + heap.
+```
 
-## Производительность QEMU (по желанию, позже)
+В окне QEMU — тёмно-синяя консоль с тем же текстом (framebuffer через GOP).
 
-Внутри WSL2 нет KVM-ускорения, QEMU работает на программной эмуляции (TCG) —
-для отладки ОС этого хватает, но медленно. Варианты ускорения:
-
-1. **QEMU для Windows** (рекомендуется позже): скачать установщик с
-   https://www.qemu.org/download/#windows, запускать из PowerShell с `-accel whpx`.
-   Образ диска берётся из WSL через путь `\\wsl$\Ubuntu\home\<юзер>\...`.
-2. Остаться на TCG, но добавлять флаг `-accel tcg,thread=multi`.
-
-## Отладка через GDB (понадобится с M2)
+## Отладка
 
 ```bash
-# Один терминал — QEMU висит и ждёт отладчик:
-qemu-system-x86_64 ... -s -S
-# Второй терминал:
-gdb -ex 'target remote localhost:1234' -ex 'symbol-file build/kernel.elf'
+make debug     # терминал 1: QEMU стоит на старте, ждёт GDB (:1234)
+make gdb       # терминал 2: подключение, breakpoint на kmain, layout split
 ```
 
-Позже всё это будет завёрнуто в удобные цели Makefile: `make run` и `make debug`.
+`make debug` + `Ctrl-A X` — выход из QEMU.
 
----
+## Производительность QEMU (по желанию)
+
+В WSL2 нет KVM → эмуляция TCG (медленнее). Для скорости: QEMU для Windows
+(https://www.qemu.org/download/#windows), запуск из PowerShell с `-accel whpx`,
+образ брать через `\\wsl$\Ubuntu\home\<юзер>\AresOS\build\aresos.img`.
 
 ## Что НЕ нужно качать
 
-- ❌ Visual Studio / MSVC — нам не нужна Windows-разработка, только MinGW как «генератор exe».
-- ❌ Bochs — полезен, но QEMU+GDB покрывает всё; вернёмся к нему при странных багах CPU.
-- ❌ WSL1 — только версия 2.
+- ❌ nasm, mtools, xorriso, gnu-efi — заменены нашими инструментами/сборкой
+- ❌ Visual Studio / MSVC
+- ❌ Bochs — QEMU+GDB покрывает всё на этом этапе

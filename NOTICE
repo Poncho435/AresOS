@@ -1,0 +1,12 @@
+AresOS
+Copyright 2026 AresOS project
+Лицензия исходного кода: Apache License 2.0 (см. LICENSE).
+
+Сторонние компоненты
+--------------------
+kernel/drivers/font8x8.h
+    8x8 bitmap-шрифт font8x8_basic
+    Автор: Daniel Hepper <daniel@hepper.net>,
+    на основе public-domain VGA-шрифтов IBM (Marcel Sondaar).
+    Лицензия: Public Domain
+    Источник: https://github.com/dhepper/font8x8

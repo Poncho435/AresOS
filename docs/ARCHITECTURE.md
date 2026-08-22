@@ -48,15 +48,24 @@
 
 ```
 AresOS/
-├── boot/          # UEFI-загрузчик (BOOTX64.EFI)
-├── kernel/        # ядро: arch/x86_64 (asm), mm/, sched/, drivers/, fs/
-├── libc/          # крошечная freestanding libc (string/memset/printf)
+├── boot/          # UEFI-загрузчик (uefi.h — свои определения, main.c)
+├── kernel/        # ядро: arch/x86_64 (asm), mm/, lib/, drivers/
+├── libc/          # крошечная freestanding libc (memset/memcpy/strlen...)
 ├── winsvc/        # (M8) PE-loader + реализация kernel32/ntdll
-├── tools/         # скрипты сборки образа, генерация шрифтов
+├── tools/         # elf2efi.py (ELF→PE32+ EFI) · mkesp.py (FAT12 ESP-образ)
 ├── docs/          # этот файл, ROADMAP, SETUP
+├── include/       # общие заголовки (bootinfo, io, kprintf, ...)
 ├── Makefile       # единая точка сборки: make / make run / make debug
-└── linker.ld      # скрипт линковки ядра (higher half)
+└── kernel/linker.ld   # скрипт линковки ядра
 ```
+
+Замечания по инструментам:
+- **Ассемблер — GAS** (`.intel_syntax noprefix`, файлы `*.S`): встроен в gcc,
+  не тянет зависимость NASM. Семантика та же.
+- **elf2efi.py** — наш конвертер ELF→PE: PT_LOAD→секции, R_X86_64_RELATIVE→
+  базовые релокации .reloc. Переиспользуем знания PE-формата на M8.
+- **mkesp.py** — генератор FAT12 ESP (1.44 МиБ) с /EFI/BOOT/BOOTX64.EFI —
+  стандартный путь, OVMF подхватывает его автоматически.
 
 ## Ключевые ABI-решения (фиксируем заранее)
 

@@ -9,7 +9,23 @@ PE-приложения (.exe)** через собственный слой со
 
 ## Статус
 
-📍 Этап **M0 — инфраструктура**. См. [docs/ROADMAP.md](docs/ROADMAP.md).
+- ✅ **M0** — инфраструктура и инструменты (Makefile, свой `elf2efi`, свой генератор ESP-образа)
+- ✅ **M1** — UEFI-загрузчик (BOOTX64.EFI): читает и парсит KERNEL.ELF, GOP-графика, ExitBootServices
+- ✅ **M2** — ядро: serial-лог COM1, kprintf, framebuffer-консоль 8x8, GDT, IDT + дамп регистров, паника
+- 🚧 **M3 (начат)** — PMM на bitmap реализован; дальше: VMM/paging, higher-half ядро, kmalloc
+
+Полный план: [docs/ROADMAP.md](docs/ROADMAP.md)
+
+## Сборка и запуск
+
+```bash
+make tools-check   # проверка окружения
+make               # собрать build/aresos.img
+make run           # QEMU + OVMF (UEFI) — окно эмулятора + serial-лог ядра
+make debug         # + GDB-stub на :1234, далее `make gdb`
+```
+
+Требования: `gcc`, `make`, `python3`, `qemu-system-x86`, `ovmf` (подробности — [docs/SETUP.md](docs/SETUP.md)).
 
 ## Документация
 
