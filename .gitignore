@@ -1,0 +1,21 @@
+# Build artifacts
+build/
+*.o
+*.d
+*.elf
+*.efi
+*.bin
+*.img
+*.iso
+*.so
+
+# Image / floppy dirs created by mtools scripts
+esp/
+
+# Toolchain (собирается локально, не коммитим)
+cross/
+opt/
+
+# Editors
+.vscode/
+*.swp
