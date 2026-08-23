@@ -27,11 +27,16 @@ make debug         # + GDB-stub на :1234, далее `make gdb`
 
 Требования: `gcc`, `make`, `python3`, `qemu-system-x86`, `ovmf` (подробности — [docs/SETUP.md](docs/SETUP.md)).
 
-## Запуск на реальном железе (без Windows!)
+## Запуск
 
-Готовый образ: **[dist/aresos-v0.1.0-m2.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-v0.1.0-m2.zip)**
-(распаковать → `aresos.img`). Записать на USB-флешку (balenaEtcher / Rufus DD-режим / dd)
-и загрузиться с неё через UEFI. Пошагово: [docs/REALHARDWARE.md](docs/REALHARDWARE.md).
+**Виртуальная машина (VirtualBox/VMware)** — нужен ISO:
+**[dist/aresos-iso-v0.1.0-m2.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-iso-v0.1.0-m2.zip)**
+→ распаковать → в настройках ВМ включить EFI → подключить `aresos.iso` как CD-диск → старт.
+
+**Реальное железо (флешка)** — нужен RAW-образ диска:
+**[dist/aresos-v0.1.0-m2.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-v0.1.0-m2.zip)**
+→ распаковать → записать `aresos.img` на флешку (balenaEtcher / Rufus DD) → загрузиться через Boot Menu.
+Пошагово: [docs/REALHARDWARE.md](docs/REALHARDWARE.md).
 
 ## Документация
 

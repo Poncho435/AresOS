@@ -47,6 +47,7 @@ KERNEL  := $(BUILD)/kernel.elf
 BOOTELF := $(BUILD)/BOOTX64.ELF
 BOOTEFI := $(BUILD)/BOOTX64.EFI
 IMG     := $(BUILD)/aresos.img
+ISO     := $(BUILD)/aresos.iso
 
 # ---- OVMF (прошивка UEFI для QEMU) ----
 OVMF_CODE ?= $(firstword $(wildcard /usr/share/OVMF/OVMF_CODE.fd \
@@ -60,7 +61,7 @@ QEMUFLAGS := -machine q35 -m 256M -net none \
     -serial stdio
 
 .PHONY: all run debug gdb verify clean tools-check
-all: $(IMG)
+all: $(IMG) $(ISO)
 
 # ==================== компиляция ====================
 $(OBJD)/boot/%.o: boot/%.c
@@ -97,6 +98,12 @@ $(IMG): $(KERNEL) $(BOOTEFI)
 	    --file KERNEL.ELF=$(KERNEL) \
 	    --file EFI/BOOT/BOOTX64.EFI=$(BOOTEFI) \
 	    --file README.TXT=$(BUILD)/README.TXT
+
+# ISO для виртуальных машин (ISO9660 + El Torito UEFI)
+$(ISO): $(KERNEL) $(BOOTEFI)
+	$(PYTHON) tools/mkiso.py $@ \
+	    --file KERNEL.ELF=$(KERNEL) \
+	    --file EFI/BOOT/BOOTX64.EFI=$(BOOTEFI)
 
 # ==================== запуск ====================
 $(BUILD)/OVMF_VARS.fd:
