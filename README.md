@@ -20,12 +20,18 @@ PE-приложения (.exe)** через собственный слой со
 
 ```bash
 make tools-check   # проверка окружения
-make               # собрать build/aresos.img
+make               # собрать build/aresos.img (GPT-диск с ESP/FAT32)
 make run           # QEMU + OVMF (UEFI) — окно эмулятора + serial-лог ядра
 make debug         # + GDB-stub на :1234, далее `make gdb`
 ```
 
 Требования: `gcc`, `make`, `python3`, `qemu-system-x86`, `ovmf` (подробности — [docs/SETUP.md](docs/SETUP.md)).
+
+## Запуск на реальном железе (без Windows!)
+
+Готовый образ — в [Releases](https://github.com/Poncho435/AresOS/releases);
+записывается на USB-флешку (balenaEtcher / Rufus DD-режим / dd) и грузит AresOS
+напрямую через UEFI при включении ПК. Пошагово: [docs/REALHARDWARE.md](docs/REALHARDWARE.md).
 
 ## Документация
 
