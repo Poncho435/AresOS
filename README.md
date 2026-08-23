@@ -29,9 +29,9 @@ make debug         # + GDB-stub на :1234, далее `make gdb`
 
 ## Запуск на реальном железе (без Windows!)
 
-Готовый образ — в [Releases](https://github.com/Poncho435/AresOS/releases);
-записывается на USB-флешку (balenaEtcher / Rufus DD-режим / dd) и грузит AresOS
-напрямую через UEFI при включении ПК. Пошагово: [docs/REALHARDWARE.md](docs/REALHARDWARE.md).
+Готовый образ: **[dist/aresos-v0.1.0-m2.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-v0.1.0-m2.zip)**
+(распаковать → `aresos.img`). Записать на USB-флешку (balenaEtcher / Rufus DD-режим / dd)
+и загрузиться с неё через UEFI. Пошагово: [docs/REALHARDWARE.md](docs/REALHARDWARE.md).
 
 ## Документация
 

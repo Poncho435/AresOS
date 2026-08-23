@@ -9,8 +9,10 @@ AresOS — bare-metal ОС: она загружается **без Windows и э
 ## Что понадобится
 
 1. Любая USB-флешка (хватит 1 ГБ). **Всё на ней будет стёрто.**
-2. Файл `aresos.img` — берётся из раздела Releases:
-   https://github.com/Poncho435/AresOS/releases (или собери сам: `make`).
+2. Файл `aresos.img` — скачай zip с образом из репозитория (ветка `arena/01a02ad5-aresos`):
+   **[dist/aresos-v0.1.0-m2.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-v0.1.0-m2.zip)**
+   (или собери сам: `make` → `build/aresos.img`). Распакуй zip — внутри один файл `aresos.img` (~68 МБ).
+   Контрольная сумма в `dist/SHA256SUMS.txt`.
 
 ## Шаг 1. Записать образ на флешку
 

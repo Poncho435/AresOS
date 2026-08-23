@@ -1,0 +1,47 @@
+# AresOS CI — автосборка загрузочного образа на GitHub.
+# Артефакт aresos.img появляется после КАЖДОГО пуша (вкладка Actions).
+# Пуш тега v* (например v0.2.0) → создаётся Release с готовым образом.
+name: Build AresOS
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # нужно для создания релизов
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build (kernel + UEFI loader + disk image)
+        run: make
+
+      - name: Static verification (PE / FAT / ELF)
+        run: make verify
+
+      - name: Upload artifact (aresos.img)
+        uses: actions/upload-artifact@v4
+        with:
+          name: aresos-img
+          path: build/aresos.img
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: GitHub Release (только для тегов v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          SHA=$(sha256sum build/aresos.img | cut -d' ' -f1)
+          gh release create "$TAG" build/aresos.img \
+            --title "AresOS $TAG — автосборка CI" \
+            --notes "Загрузочный GPT-диск (ESP/FAT32) для реального железа и QEMU.
+          Запись на флешку: balenaEtcher / Rufus (режим DD). Инструкция: docs/REALHARDWARE.md.
+          SHA-256: \`${SHA}\`"
