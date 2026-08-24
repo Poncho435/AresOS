@@ -82,10 +82,10 @@ $(KERNEL): $(KERNEL_OBJS) kernel/linker.ld
 	    -Wl,--build-id=none -o $@ $(KERNEL_OBJS)
 	@echo "[make] ядро: $@"
 
-$(BOOTELF): $(LOADER_OBJS)
-	$(CC) $(LOADER_CFLAGS) -nostdlib -static-pie \
-	    -Wl,-e,efi_main -Wl,--build-id=none -o $@ $(LOADER_OBJS)
-	@echo "[make] загрузчик (ELF PIE): $@"
+$(BOOTELF): $(LOADER_OBJS) boot/loader.ld
+	$(CC) $(LOADER_CFLAGS) -nostdlib -static-pie -T boot/loader.ld \
+	    -Wl,-e,efi_main -Wl,-z,norelro -Wl,--build-id=none -o $@ $(LOADER_OBJS)
+	@echo "[make] загрузчик (ELF PIE, сегменты выровнены по 0x1000): $@"
 
 $(BOOTEFI): $(BOOTELF)
 	$(PYTHON) tools/elf2efi.py $< $@

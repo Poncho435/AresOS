@@ -29,19 +29,19 @@ make debug         # + GDB-stub на :1234, далее `make gdb`
 
 Требования: `gcc`, `make`, `python3`, `qemu-system-x86`, `ovmf` (подробности — [docs/SETUP.md](docs/SETUP.md)).
 
-## Запуск (v0.2.0 — есть рабочий стол!)
+## Запуск (v0.2.1 — есть рабочий стол!)
 
 **VirtualBox — самый простой путь:**
-**[dist/aresos-vm-v0.2.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-vm-v0.2.0.zip)**
+**[dist/aresos-vm-v0.2.1.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-vm-v0.2.1.zip)**
 → распаковать → ВМ (Other 64-bit, 256 МБ, ✔EFI) → в «Носителях» к SATA прикрепить файл
 `aresos.vmdk` → Запустить. Никакой командной строки!
 
 **Реальное железо (флешка):**
-**[dist/aresos-usb-v0.2.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-usb-v0.2.0.zip)**
+**[dist/aresos-usb-v0.2.1.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-usb-v0.2.1.zip)**
 → `aresos.img` на флешку (balenaEtcher / Rufus DD) → Boot Menu → «UEFI: флешка».
 Пошагово: [docs/REALHARDWARE.md](docs/REALHARDWARE.md).
 
-**ISO для CD-привода (экспериментально):** `dist/aresos-iso-v0.2.0.zip`
+**ISO для CD-привода (экспериментально):** `dist/aresos-iso-v0.2.1.zip`
 (прошивка VirtualBox его пока не принимает — известная проблема).
 
 ## Документация

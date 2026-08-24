@@ -157,6 +157,13 @@ def convert(inp, outp):
         if any(s["name"] == name for s in sections_out):
             name += str(idx)
         rva = seg["vaddr"] + delta
+        if rva % SALIGN != 0:
+            raise ElfError(
+                f"PT_LOAD vaddr 0x{seg['vaddr']:x} -> RVA 0x{rva:x}: НЕ кратна "
+                f"SectionAlignment 0x{SALIGN:x}. UEFI PeCoff-загрузчик отклонит "
+                f"такой PE ещё до запуска (типичный симптом: 'failed to load … "
+                f"Not Found' и чёрный экран). Выровняй начало PT_LOAD в "
+                f"boot/loader.ld через ALIGN(0x1000).")
         if exec_:
             chars = 0x60000020          # CODE | EXECUTE | READ
         elif write_:
@@ -288,6 +295,7 @@ def verify(path):
 
     shdr = o + opt_size
     min_text, max_text = None, None
+    bad_align = []
     def rva2off(rva):
         for i in range(nsec):
             p = shdr + i * 40
@@ -304,6 +312,10 @@ def verify(path):
         vsz, va, rpsz, rpo = u32(data, p + 8), u32(data, p + 12), u32(data, p + 16), u32(data, p + 20)
         ch = u32(data, p + 36)
         print(f"[verify] section {name:8s} RVA=0x{va:05x} vsize={vsz:5d} raw={rpsz:5d}B chars=0x{ch:08x}")
+        if va % max(salign, 1) != 0:
+            print(f"[verify] FAIL: RVA секции {name} (0x{va:x}) не кратна "
+                  f"SectionAlignment 0x{salign:x} — UEFI отклонит этот PE!")
+            bad_align.append(name)
         if name.startswith(".text"):
             min_text, max_text = va, va + max(vsz, rpsz)
     if min_text is not None:
@@ -324,7 +336,10 @@ def verify(path):
             nentries += cnt
             off += size
         print(f"[verify] .reloc: {nblocks} блок(ов), {nentries} записей (DIR64) — OK")
-    print("[verify] структура PE валидна — образ готов к загрузке UEFI")
+    if bad_align:
+        print(f"[verify] ИТОГ: ОТКАЗ — невыровненные секции: {', '.join(bad_align)}")
+        sys.exit(1)
+    print("[verify] структура PE валидна (в т.ч. выравнивание секций) — готов к загрузке UEFI")
 
 
 if __name__ == "__main__":
