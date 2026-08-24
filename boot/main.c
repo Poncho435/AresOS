@@ -273,6 +273,29 @@ static EFI_STATUS exit_boot_services(EFI_HANDLE image) {
     return EFI_ERROR_BIT | 1;
 }
 
+/* ===================== diag-маркеры (v0.2.2): полосы в fb напрямую =====================
+ * Рисуем в GOP framebuffer БЕЗ прошивки и консоли. По фото экрана видно,
+ * до какого этапа дошла загрузка (даже если падает текст/serial):
+ *   M1 синий весь экран — загрузчик жив, GOP найден, fb пишется
+ *   M2 зелёная полоса   — KERNEL.ELF прочитан с ESP
+ *   M3 бирюзовая        — PT_LOAD ядра размещены в памяти
+ *   M4 пурпурная        — ExitBootServices прошёл (прошивка отпустила)
+ *   M5 циановая         — ставит ядро: точка входа выполняется (kmain)
+ */
+static void diag_band(uint32_t y0, uint32_t y1, uint8_t r, uint8_t g, uint8_t b) {
+    if (!g_bootinfo.fb.phys_base || g_bootinfo.fb.format > FB_FORMAT_BGR) return;
+    if (!g_bootinfo.fb.pitch || !g_bootinfo.fb.width || !g_bootinfo.fb.height) return;
+    uint32_t v = (g_bootinfo.fb.format == FB_FORMAT_RGB)
+               ? ((uint32_t)r << 16) | ((uint32_t)g << 8) | b
+               : ((uint32_t)b << 16) | ((uint32_t)g << 8) | r;
+    uint32_t *fb = (uint32_t *)(uintptr_t)g_bootinfo.fb.phys_base;
+    if (y1 > g_bootinfo.fb.height) y1 = g_bootinfo.fb.height;
+    for (uint32_t y = y0; y < y1; y++) {
+        uint32_t *line = fb + (uint64_t)y * g_bootinfo.fb.pitch;
+        for (uint32_t x = 0; x < g_bootinfo.fb.width; x++) line[x] = v;
+    }
+}
+
 /* ===================== точка входа UEFI ===================== */
 extern char __bss_start[], _end[];  /* символы link-скрипта PIE */
 
@@ -290,8 +313,13 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
 
     if (gST->ConOut) {
         gST->ConOut->ClearScreen(gST->ConOut);
-        screen_print(u"AresOS loader (BOOTX64.EFI)\r\n");
+        screen_print(u"AresOS loader (BOOTX64.EFI) v0.2.2-diag\r\n");
     }
+
+    /* графику поднимаем ПЕРВОЙ (SetMode сам очищает экран) — нужна для маркеров */
+    setup_graphics();
+    diag_band(0, 0xFFFFFFFF, 0x00, 0x00, 0xC0);      /* M1: весь экран синий */
+    serial_str("[diag] M1 loader-alive GOP-ok\n");
     log_line("[boot] stage 1: console up");
 
     /* сторожевой таймер — выключить (иначе ребут через 5 минут) */
@@ -301,19 +329,24 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
     UINTN ksize;
     EFI_STATUS st = read_kernel_file(&kbuf, &ksize);
     if (EFI_ERROR(st)) goto hang;
+    diag_band(0, 32, 0x00, 0xC0, 0x00);              /* M2: ядро прочитано */
+    serial_str("[diag] M2 kernel-file-read-ok\n");
 
     uint64_t entry;
     st = load_kernel_segments(kbuf, &entry);
     if (EFI_ERROR(st)) goto hang;
+    diag_band(32, 64, 0x00, 0xA8, 0xA8);             /* M3: PT_LOAD размещены */
+    serial_str("[diag] M3 segments-loaded-ok\n");
     log_hex("[boot] kernel entry = ", entry);
-
-    setup_graphics();
 
     g_bootinfo.magic = BOOTINFO_MAGIC;
 
     /* ВАЖНО: после этого вызова никакие Boot Services больше нельзя трогать */
     st = exit_boot_services(image_handle);
     if (EFI_ERROR(st)) goto hang;
+    /* прошивка отдала управление; fb — просто память, писать всё ещё можно */
+    diag_band(64, 96, 0xC0, 0x00, 0xC0);             /* M4: ExitBootServices OK */
+    serial_str("[diag] M4 exit-boot-services-ok\n");
 
     __asm__ volatile ("cli");
     ((void (*)(bootinfo_t *))entry)(&g_bootinfo);

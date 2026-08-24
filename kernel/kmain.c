@@ -15,8 +15,6 @@
 extern void gdt_init(void);
 extern void idt_init(void);
 
-#define KERNEL_VERSION "0.2.0-desktop"
-
 /* дескриптор UEFI — такой же layout, как в pmm.c */
 typedef struct {
     uint32_t type;
@@ -57,7 +55,21 @@ static void print_memory_summary(const bootinfo_t *bi) {
     kprintf("[mem] usable RAM total: %lu MiB\n", usable >> 20);
 }
 
+#define KERNEL_VERSION "0.2.2-diag"
+
 void kmain(bootinfo_t *bi) {
+    /* M5 diag-маркер (v0.2.2): первая инструкция ядра — циановая полоса.
+       Видна, только если загрузчик дошёл до ExitBootServices и прыгнул сюда. */
+    if (bi && bi->fb.phys_base && bi->fb.format <= FB_FORMAT_BGR &&
+        bi->fb.pitch && bi->fb.width && bi->fb.height > 128) {
+        uint32_t v = (bi->fb.format == FB_FORMAT_RGB) ? 0x0000C0C0u : 0x00C0C000u;
+        uint32_t *fb = (uint32_t *)(uintptr_t)bi->fb.phys_base;
+        for (uint32_t y = 96; y < 128; y++) {
+            uint32_t *line = fb + (uint64_t)y * bi->fb.pitch;
+            for (uint32_t x = 0; x < bi->fb.width; x++) line[x] = v;
+        }
+    }
+
     serial_init();   /* первым делом — канал отладки */
 
     kprintf("\n");

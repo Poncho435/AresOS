@@ -41,6 +41,10 @@ static void fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t c
 
 void fb_console_init(const bootinfo_fb_t *fb) {
     if (!fb || !fb->phys_base) return;  // нет графики — остаётся serial
+    /* защита от нулевой/мусорной геометрии (иначе scroll в бесконечность) */
+    if (fb->width < GLYPH_W * 2 || fb->height < GLYPH_H * 4 || !fb->pitch) {
+        return;
+    }
     g_fb = *fb;
     g_cols = g_fb.width / GLYPH_W;
     g_rows = g_fb.height / GLYPH_H;

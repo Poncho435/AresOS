@@ -18,6 +18,7 @@ static inline uint32_t *fbp(void) {
 
 void gfx_init(const bootinfo_fb_t *fb) {
     if (!fb || !fb->phys_base) return;
+    if (fb->width < 64 || fb->height < 64 || !fb->pitch) return;  /* страховка */
     g_fb = *fb;
     g_ready = 1;
 }
