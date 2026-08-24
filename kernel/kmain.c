@@ -55,7 +55,7 @@ static void print_memory_summary(const bootinfo_t *bi) {
     kprintf("[mem] usable RAM total: %lu MiB\n", usable >> 20);
 }
 
-#define KERNEL_VERSION "0.2.2-diag"
+#define KERNEL_VERSION "0.2.3-diag"
 
 void kmain(bootinfo_t *bi) {
     /* M5 diag-маркер (v0.2.2): первая инструкция ядра — циановая полоса.

@@ -37,6 +37,11 @@ static bootinfo_t g_bootinfo;   /* живёт в нашей памяти до п
 static const EFI_GUID gGopGuid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
 static const EFI_GUID gLoadedImageGuid = EFI_LOADED_IMAGE_PROTOCOL_GUID;
 static const EFI_GUID gSimpleFsGuid = EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID;
+static const EFI_GUID gFileInfoGuid =
+    { 0x09576E92, 0x6D3F, 0x11D2, { 0x8E, 0x39, 0x00, 0xA0, 0xC9, 0x69, 0x72, 0x3B } };
+
+/* diag-полосы (определение — ниже, перед efi_main) */
+static void diag_band(uint32_t y0, uint32_t y1, uint8_t r, uint8_t g, uint8_t b);
 
 /* ===================== debug-вывод: COM1 + экран ===================== */
 static inline void outb(uint16_t port, uint8_t val) {
@@ -116,28 +121,60 @@ static EFI_STATUS read_kernel_file(uint8_t **out_buf, UINTN *out_size) {
 
     st = gBS->HandleProtocol(g_loaded_image, &gLoadedImageGuid, (void **)&li);
     if (EFI_ERROR(st)) { log_line("[boot] FAIL: HandleProtocol(LoadedImage)"); return st; }
+    serial_str("[fs] loaded-image ok\n");
+    diag_band(0, 8, 0xFF, 0x60, 0x00);            /* R1 */
 
     st = gBS->HandleProtocol(li->DeviceHandle, &gSimpleFsGuid, (void **)&fs);
     if (EFI_ERROR(st)) { log_line("[boot] FAIL: HandleProtocol(SimpleFS)"); return st; }
+    serial_str("[fs] simple-fs ok\n");
+    diag_band(8, 16, 0xFF, 0xA0, 0x00);           /* R2 */
 
     st = fs->OpenVolume(fs, &root);
     if (EFI_ERROR(st)) { log_line("[boot] FAIL: OpenVolume"); return st; }
+    serial_str("[fs] volume open ok\n");
+    diag_band(16, 24, 0xE0, 0xE0, 0x00);          /* R3 */
 
     st = root->Open(root, &file, u"KERNEL.ELF", EFI_FILE_MODE_READ, 0);
     if (EFI_ERROR(st)) { log_line("[boot] FAIL: open KERNEL.ELF — файла нет на ESP"); return st; }
+    serial_str("[fs] KERNEL.ELF open ok\n");
+    diag_band(24, 32, 0x80, 0xE0, 0x00);          /* R4 */
 
-    /* размер файла — трюком SetPosition(0xFF..FF) + GetPosition */
+    /* размер файла: СНАЧАЛА канонический GetInfo (EFI_FILE_INFO),
+       а трюк SetPosition(end) — только как запасной вариант */
     uint64_t size = 0;
-    st = file->SetPosition(file, 0xFFFFFFFFFFFFFFFFULL);
-    if (EFI_ERROR(st)) { log_line("[boot] FAIL: SetPosition(end)"); return st; }
-    st = file->GetPosition(file, &size);
-    if (EFI_ERROR(st)) { log_line("[boot] FAIL: GetPosition"); return st; }
-    file->SetPosition(file, 0);
+    UINTN info_sz = 0;
+    st = file->GetInfo(file, &gFileInfoGuid, &info_sz, (void *)0);
+    if (st == EFI_BUFFER_TOO_SMALL && info_sz) {
+        void *info_buf = (void *)0;
+        st = gBS->AllocatePool(2 /*EfiLoaderData*/, info_sz, &info_buf);
+        if (!EFI_ERROR(st)) {
+            UINTN got = info_sz;
+            st = file->GetInfo(file, &gFileInfoGuid, &got, info_buf);
+            if (!EFI_ERROR(st) && got >= 16) {
+                /* EFI_FILE_INFO: Size(u64)@0, FileSize(u64)@8 */
+                size = *(uint64_t *)((uint8_t *)info_buf + 8);
+            }
+            gBS->FreePool(info_buf);
+        }
+    }
+    if (!size) {   /* fallback: старый трюк с позицией */
+        st = file->SetPosition(file, 0xFFFFFFFFFFFFFFFFULL);
+        if (EFI_ERROR(st)) { log_line("[boot] FAIL: SetPosition(end)"); return st; }
+        st = file->GetPosition(file, &size);
+        if (EFI_ERROR(st)) { log_line("[boot] FAIL: GetPosition"); return st; }
+        file->SetPosition(file, 0);
+    }
+    serial_str("[fs] size ok\n");
+    diag_band(32, 40, 0x40, 0xC0, 0x40);          /* R5 */
+
+    if (!size) { log_line("[boot] FAIL: KERNEL.ELF size == 0"); return EFI_ERROR_BIT | 1; }
 
     EFI_PHYSICAL_ADDRESS buf = 0;
     UINTN pages = EFI_SIZE_TO_PAGES(size);
     st = gBS->AllocatePages(AllocateAnyPages, EfiLoaderData, pages, &buf);
     if (EFI_ERROR(st)) { log_line("[boot] FAIL: AllocatePages(kernel file)"); return st; }
+    serial_str("[fs] pages alloc ok\n");
+    diag_band(40, 48, 0x20, 0xC0, 0x80);          /* R6 */
 
     UINTN read_size = size;
     st = file->Read(file, &read_size, (void *)buf);
@@ -145,6 +182,8 @@ static EFI_STATUS read_kernel_file(uint8_t **out_buf, UINTN *out_size) {
         log_line("[boot] FAIL: Read(kernel)");
         return EFI_ERROR_BIT | 1;
     }
+    serial_str("[fs] read ok\n");
+    diag_band(48, 56, 0x00, 0xC0, 0xC0);          /* R7 */
     file->Close(file);
     root->Close(root);
 
@@ -313,7 +352,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
 
     if (gST->ConOut) {
         gST->ConOut->ClearScreen(gST->ConOut);
-        screen_print(u"AresOS loader (BOOTX64.EFI) v0.2.2-diag\r\n");
+        screen_print(u"AresOS loader (BOOTX64.EFI) v0.2.3-diag\r\n");
     }
 
     /* графику поднимаем ПЕРВОЙ (SetMode сам очищает экран) — нужна для маркеров */
@@ -335,7 +374,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
     uint64_t entry;
     st = load_kernel_segments(kbuf, &entry);
     if (EFI_ERROR(st)) goto hang;
-    diag_band(32, 64, 0x00, 0xA8, 0xA8);             /* M3: PT_LOAD размещены */
+    diag_band(56, 64, 0x00, 0xA8, 0xA8);             /* M3: PT_LOAD размещены */
     serial_str("[diag] M3 segments-loaded-ok\n");
     log_hex("[boot] kernel entry = ", entry);
 
@@ -355,5 +394,8 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
 
 hang:
     log_line("[boot] FATAL — system halted");
+    /* аварийное состояние: полосы-«усы» ниже маркеров, чтобы было видно на фото */
+    for (uint32_t yy = 128; yy < 768; yy += 16)
+        diag_band(yy, yy + 8, 0xC0, 0x20, 0x00);
     for (;;) __asm__ volatile ("hlt");
 }
