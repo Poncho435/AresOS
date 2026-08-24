@@ -104,16 +104,29 @@ AresOS init complete (M2). CPU halting
 
 ---
 
-## Бонус: запуск в VirtualBox через ISO (без флешки)
+## Запуск в VirtualBox (надёжный путь — жёсткий диск VDI)
 
-Подходит и для VMware Player (там выбрать `.iso` при создании ВМ).
+> ⚠️ Путь через CD/ISO помечен как экспериментальный: прошивка VirtualBox (VBoxEFI)
+> отвергает наш самописный El Torito ISO (`failed to load ... CD-ROM: Not Found`).
+> Путь через виртуальный жёсткий диск — тот же, что и на реальном железе, и он работает.
 
-1. Скачай и распакуй **[aresos-iso-v0.1.0-m2.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-iso-v0.1.0-m2.zip)** → получишь `aresos.iso` (~1.6 МБ).
-2. VirtualBox → **Создать**: имя любое, Тип: **Other**, Версия: **Other/Unknown (64-bit)**, память 256 МБ, без жёсткого диска.
-3. **Настроить → Система → Материнская плата** → галка **«Включить EFI»**.
-4. **Настроить → Носители** → иконка CD-диска → «Выберите файл диска...» → выбери `aresos.iso`.
-5. **Запустить** → консоль AresOS. 🎉
+1. Скачай и распакуй **[aresos-v0.1.0-m2.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-v0.1.0-m2.zip)** → файл `aresos.img`.
+2. Сконвертируй в формат VirtualBox — PowerShell (обычный), одна команда
+   (поправь путь, если img лежит не в Загрузках):
+   ```powershell
+   & "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe" convertfromraw "$env:USERPROFILE\Downloads\aresos.img" "$env:USERPROFILE\Downloads\aresos.vdi" --format VDI
+   ```
+   Должно вывести `0%...10%...100%` — готово, появится `aresos.vdi`.
+3. VirtualBox → ВМ (Other/Unknown 64-bit, 256 МБ, **галка EFI** ✔).
+4. **Настроить → Носители** → **Контроллер: SATA** → иконка «добавить жёсткий диск» (диск с зелёным +) → **«Выбрать существующий»** → укажи `aresos.vdi`.
+5. **Запустить** → консоль AresOS.
 
-> Почему в том диалоге «только ISO»: это диалог **CD-привода**, а ISO — образ CD.
-> Наш `aresos.img` — образ жёсткого диска (GPT), он к CD-приводу не подключается
-> (нужна конвертация в VDI). Чтобы не мучиться — и сделан этот ISO.
+## Экспериментальный путь — ISO (CD)
+
+*Известная проблема: VBoxEFI отказывается грузить ISO (`Not Found`). Чинится.*
+
+<details>
+<summary>Старые шаги (когда ISO починим)</summary>
+
+Скачать `aresos-iso…zip`, ВМ с галкой EFI, подключить ISO в CD-привод…
+</details>
