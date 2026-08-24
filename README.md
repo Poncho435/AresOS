@@ -9,10 +9,12 @@ PE-приложения (.exe)** через собственный слой со
 
 ## Статус
 
-- ✅ **M0** — инфраструктура и инструменты (Makefile, свой `elf2efi`, свой генератор ESP-образа)
-- ✅ **M1** — UEFI-загрузчик (BOOTX64.EFI): читает и парсит KERNEL.ELF, GOP-графика, ExitBootServices
-- ✅ **M2** — ядро: serial-лог COM1, kprintf, framebuffer-консоль 8x8, GDT, IDT + дамп регистров, паника
-- 🚧 **M3 (начат)** — PMM на bitmap реализован; дальше: VMM/paging, higher-half ядро, kmalloc
+- ✅ **M0** — инфраструктура и инструменты
+- ✅ **M1** — UEFI-загрузчик (BOOTX64.EFI): ELF-парсер, GOP-графика, ExitBootServices
+- ✅ **M2** — ядро: serial, kprintf, framebuffer-консоль, GDT, IDT (32 исключения)
+- ✅ **M2.5 (бонус)** — **прототип рабочего стола**: обои, панель, док, окно с перетаскиванием,
+  мышь PS/2 через PIC (IRQ12)
+- 🚧 **M3 (частично)** — PMM на bitmap; дальше: VMM/paging, higher-half ядро, kmalloc
 
 Полный план: [docs/ROADMAP.md](docs/ROADMAP.md)
 
@@ -27,16 +29,20 @@ make debug         # + GDB-stub на :1234, далее `make gdb`
 
 Требования: `gcc`, `make`, `python3`, `qemu-system-x86`, `ovmf` (подробности — [docs/SETUP.md](docs/SETUP.md)).
 
-## Запуск
+## Запуск (v0.2.0 — есть рабочий стол!)
 
-**Виртуальная машина (VirtualBox/VMware)** — нужен ISO:
-**[dist/aresos-iso-v0.1.0-m2.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-iso-v0.1.0-m2.zip)**
-→ распаковать → в настройках ВМ включить EFI → подключить `aresos.iso` как CD-диск → старт.
+**VirtualBox — самый простой путь:**
+**[dist/aresos-vm-v0.2.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-vm-v0.2.0.zip)**
+→ распаковать → ВМ (Other 64-bit, 256 МБ, ✔EFI) → в «Носителях» к SATA прикрепить файл
+`aresos.vmdk` → Запустить. Никакой командной строки!
 
-**Реальное железо (флешка)** — нужен RAW-образ диска:
-**[dist/aresos-v0.1.0-m2.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-v0.1.0-m2.zip)**
-→ распаковать → записать `aresos.img` на флешку (balenaEtcher / Rufus DD) → загрузиться через Boot Menu.
+**Реальное железо (флешка):**
+**[dist/aresos-usb-v0.2.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-usb-v0.2.0.zip)**
+→ `aresos.img` на флешку (balenaEtcher / Rufus DD) → Boot Menu → «UEFI: флешка».
 Пошагово: [docs/REALHARDWARE.md](docs/REALHARDWARE.md).
+
+**ISO для CD-привода (экспериментально):** `dist/aresos-iso-v0.2.0.zip`
+(прошивка VirtualBox его пока не принимает — известная проблема).
 
 ## Документация
 

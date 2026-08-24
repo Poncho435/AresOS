@@ -2,14 +2,7 @@
  * "Красивый крах" вместо мёртвого зависания — главный инструмент M2. */
 #include <stdint.h>
 #include "kprintf.h"
-
-/* layout должен совпадать с порядком push в idt_stubs.S */
-typedef struct {
-    uint64_t r15, r14, r13, r12, r11, r10, r9, r8;
-    uint64_t rbp, rdi, rsi, rdx, rcx, rbx, rax;
-    uint64_t vector, error;
-    uint64_t rip, cs, rflags, rsp, ss;
-} regs_t;
+#include "regs.h"
 
 static const char *const exc_names[32] = {
     "Divide Error",            "Debug",                  "NMI",

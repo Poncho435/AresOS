@@ -1,17 +1,21 @@
 /* AresOS — kmain: главная функция ядра.
- * Порядок инициализации (M1/M2/M3-lite):
- *   serial → GDT → IDT → FB-консоль → карта памяти → PMM → тест → halt. */
+ * Порядок инициализации:
+ *   serial → GDT → IDT → FB-консоль → карта памяти → PMM → тест →
+ *   PIC+мышь → рабочий стол (или halt, если нет графики). */
 #include "bootinfo.h"
 #include "serial.h"
 #include "kprintf.h"
 #include "fb_console.h"
 #include "pmm.h"
+#include "pic.h"
+#include "mouse.h"
+#include "desktop.h"
 #include <stdint.h>
 
 extern void gdt_init(void);
 extern void idt_init(void);
 
-#define KERNEL_VERSION "0.1.0-m2"
+#define KERNEL_VERSION "0.2.0-desktop"
 
 /* дескриптор UEFI — такой же layout, как в pmm.c */
 typedef struct {
@@ -93,6 +97,18 @@ void kmain(bootinfo_t *bi) {
     kprintf("[pmm] test: freed both, free pages=%lu (%lu MiB)\n",
             pmm_free_pages(), (pmm_free_pages() * 4096ULL) >> 20);
 
-    kprintf("\nAresOS init complete (M2). CPU halting; next milestone: M3 VMM + heap.\n");
+    uint64_t free_mib = (pmm_free_pages() * 4096ULL) >> 20;
+    uint64_t total_mib = (pmm_total_pages() * 4096ULL) >> 20;
+
+    if (fb_console_ready()) {
+        kprintf("\n[desktop] starting AresOS Desktop prototype...\n");
+        pic_remap();
+        mouse_init();
+        /* IRQ12 (bit4 slave) + cascade IRQ2 (bit2 master); остальное замаскировано */
+        pic_set_mask((uint8_t)~0x04, (uint8_t)~0x10);
+        desktop_enter(bi, total_mib, free_mib);   /* не возвращается */
+    }
+
+    kprintf("\nAresOS init complete. No framebuffer — halting.\n");
     for (;;) __asm__ volatile ("hlt");
 }

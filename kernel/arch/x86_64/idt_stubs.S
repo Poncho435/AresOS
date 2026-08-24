@@ -96,4 +96,75 @@ ISR_ERR   29    # VC
 ISR_ERR   30    # SX
 ISR_NOERR 31
 
+/* ================= аппаратные прерывания (вектора 32..47) ================= */
+.extern irq_dispatch
+
+irq_common:
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push rbp
+    push r8
+    push r9
+    push r10
+    push r11
+    push r12
+    push r13
+    push r14
+    push r15
+
+    mov rdi, rsp
+    mov rbx, rsp
+    and rsp, -16
+    cld
+    call irq_dispatch
+    mov rsp, rbx
+
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rbp
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+
+    add rsp, 16
+    iretq
+
+.macro IRQSTUB n
+.global irq\n
+irq\n:
+    push 0
+    push \n
+    jmp irq_common
+.endm
+
+IRQSTUB 32    # IRQ0  PIT (пока замаскирован)
+IRQSTUB 33    # IRQ1  клавиатура (M4)
+IRQSTUB 34    # IRQ2  cascade
+IRQSTUB 35    # IRQ3  COM2
+IRQSTUB 36    # IRQ4  COM1
+IRQSTUB 37    # IRQ5
+IRQSTUB 38    # IRQ6  FDC
+IRQSTUB 39    # IRQ7  LPT
+IRQSTUB 40    # IRQ8  RTC
+IRQSTUB 41    # IRQ9
+IRQSTUB 42    # IRQ10
+IRQSTUB 43    # IRQ11
+IRQSTUB 44    # IRQ12 мышь PS/2
+IRQSTUB 45    # IRQ13 FPU
+IRQSTUB 46    # IRQ14 ATA primary
+IRQSTUB 47    # IRQ15 ATA secondary
+
 .section .note.GNU-stack,"",@progbits

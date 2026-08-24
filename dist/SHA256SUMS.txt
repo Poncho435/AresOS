@@ -1,2 +1,2 @@
-7b7e705462dde053e299b14f073e4f7009305243b09680f3e0017737024d3eb5  aresos.img (из aresos-v0.1.0-m2.zip)
-1a27b99d1680f1212b7116df640f1418bed8fe94564a110a7c3e2bbb9a19360f  aresos.iso (из aresos-iso-v0.1.0-m2.zip)
+69f88b4822a212757000495b7fc830e3d8ccf26a2215475c673df4bae41e38f8  aresos.img (usb / vm zip)
+88b22defae5eaae0c0907676bbbbc175cda6d2f106302a76289aca95fc8c7223  aresos.iso (iso zip, экспериментально)

@@ -9,14 +9,12 @@ AresOS — bare-metal ОС: она загружается **без Windows и э
 ## Что понадобится
 
 1. Любая USB-флешка (хватит 1 ГБ). **Всё на ней будет стёрто.**
-2. Файл `aresos.img` — скачай zip с образом из репозитория (ветка `arena/01a02ad5-aresos`):
-   **[dist/aresos-v0.1.0-m2.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-v0.1.0-m2.zip)**
+2. Файл `aresos.img` — скачай zip с образом из репозитория:
+   **[dist/aresos-usb-v0.2.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-usb-v0.2.0.zip)**
    (или собери сам: `make` → `build/aresos.img`). Распакуй zip — внутри один файл `aresos.img` (~68 МБ).
    Контрольная сумма в `dist/SHA256SUMS.txt`.
 
-> 💡 Для **виртуальных машин** (VirtualBox/VMware) флешка не нужна — бери
-> ISO-образ: [dist/aresos-iso-v0.1.0-m2.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-iso-v0.1.0-m2.zip),
-> подключи его как CD-диск (см. конец документа).
+> 💡 Для **виртуальной машины** флешка не нужна — см. раздел про VirtualBox ниже.
 
 ## Шаг 1. Записать образ на флешку
 
@@ -104,22 +102,21 @@ AresOS init complete (M2). CPU halting
 
 ---
 
-## Запуск в VirtualBox (надёжный путь — жёсткий диск VDI)
+## Запуск в VirtualBox (простой путь — VMDK, без командной строки)
 
-> ⚠️ Путь через CD/ISO помечен как экспериментальный: прошивка VirtualBox (VBoxEFI)
-> отвергает наш самописный El Torito ISO (`failed to load ... CD-ROM: Not Found`).
-> Путь через виртуальный жёсткий диск — тот же, что и на реальном железе, и он работает.
+1. Скачай и распакуй **[aresos-vm-v0.2.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-vm-v0.2.0.zip)**
+   — внутри два файла: `aresos.vmdk` и `aresos.img` (оба нужны, в одной папке!).
+2. VirtualBox → ВМ: Тип **Other**, Версия **Other/Unknown (64-bit)**, 256 МБ, **✔ EFI**.
+3. **Настроить → Носители** → **Контроллер: SATA** → «добавить жёсткий диск» →
+   **«Выбрать существующий»** → **Добавить** → выбери **`aresos.vmdk`** → Выбрать.
+4. **Запустить** → рабочий стол AresOS (окно таскается мышью).
 
-1. Скачай и распакуй **[aresos-v0.1.0-m2.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-v0.1.0-m2.zip)** → файл `aresos.img`.
-2. Сконвертируй в формат VirtualBox — PowerShell (обычный), одна команда
-   (поправь путь, если img лежит не в Загрузках):
-   ```powershell
-   & "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe" convertfromraw "$env:USERPROFILE\Downloads\aresos.img" "$env:USERPROFILE\Downloads\aresos.vdi" --format VDI
-   ```
-   Должно вывести `0%...10%...100%` — готово, появится `aresos.vdi`.
-3. VirtualBox → ВМ (Other/Unknown 64-bit, 256 МБ, **галка EFI** ✔).
-4. **Настроить → Носители** → **Контроллер: SATA** → иконка «добавить жёсткий диск» (диск с зелёным +) → **«Выбрать существующий»** → укажи `aresos.vdi`.
-5. **Запустить** → консоль AresOS.
+> Раньше тут была конвертация через PowerShell (`VBoxManage convertfromraw`) —
+> больше не нужна: `aresos.vmdk` — это текстовый дескриптор, который подцепляет
+> raw-образ как есть.
+
+> ⚠️ ISO в CD-приводе прошивка VBox пока не принимает (`Not Found`) — известная
+> проблема нашего ISO-генератора; используй VMDK.
 
 ## Экспериментальный путь — ISO (CD)
 

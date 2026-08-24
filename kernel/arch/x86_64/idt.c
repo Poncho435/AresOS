@@ -12,13 +12,13 @@ typedef struct {
     uint32_t zero;
 } __attribute__((packed)) idt_entry_t;
 
-#define IDT_ENTRIES 32
+#define IDT_ENTRIES 48
 #define GATE_INTERRUPT 0x8E   /* P=1, DPL=0, type=1110 (64-bit interrupt gate) */
 #define SEL_KCODE      0x08
 
 static idt_entry_t idt[IDT_ENTRIES];
 
-/* стабы из idt_stubs.S */
+/* стабы из idt_stubs.S (исключения) */
 extern void isr0(void);  extern void isr1(void);  extern void isr2(void);
 extern void isr3(void);  extern void isr4(void);  extern void isr5(void);
 extern void isr6(void);  extern void isr7(void);  extern void isr8(void);
@@ -31,11 +31,21 @@ extern void isr24(void); extern void isr25(void); extern void isr26(void);
 extern void isr27(void); extern void isr28(void); extern void isr29(void);
 extern void isr30(void); extern void isr31(void);
 
+/* IRQ-стабы */
+extern void irq32(void); extern void irq33(void); extern void irq34(void);
+extern void irq35(void); extern void irq36(void); extern void irq37(void);
+extern void irq38(void); extern void irq39(void); extern void irq40(void);
+extern void irq41(void); extern void irq42(void); extern void irq43(void);
+extern void irq44(void); extern void irq45(void); extern void irq46(void);
+extern void irq47(void);
+
 static void (*const stub_table[IDT_ENTRIES])(void) = {
     isr0,  isr1,  isr2,  isr3,  isr4,  isr5,  isr6,  isr7,
     isr8,  isr9,  isr10, isr11, isr12, isr13, isr14, isr15,
     isr16, isr17, isr18, isr19, isr20, isr21, isr22, isr23,
     isr24, isr25, isr26, isr27, isr28, isr29, isr30, isr31,
+    irq32, irq33, irq34, irq35, irq36, irq37, irq38, irq39,
+    irq40, irq41, irq42, irq43, irq44, irq45, irq46, irq47,
 };
 
 static void idt_set(int n, void (*handler)(void)) {
