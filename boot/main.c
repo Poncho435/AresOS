@@ -391,7 +391,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
 
     if (gST->ConOut) {
         gST->ConOut->ClearScreen(gST->ConOut);
-        screen_print(u"AresOS loader (BOOTX64.EFI) v0.3.4\r\n");
+        screen_print(u"AresOS loader (BOOTX64.EFI) v0.4.0\r\n");
     }
 
     /* графику поднимаем ПЕРВОЙ (SetMode сам очищает экран) — нужна для маркеров */
@@ -422,6 +422,34 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
     log_hex("[boot] kernel entry = ", entry);
 
     g_bootinfo.magic = BOOTINFO_MAGIC;
+
+    /* M4: RSDP из EFI ConfigurationTable (GUID ACPI 2.0/1.0).
+       На UEFI-загрузке скан 0xE0000 может НИЧЕГО не найти — это единственный
+       надёжный путь. Делать ДО ExitBootServices. */
+    {
+        g_bootinfo.rsdp_phys = 0;
+        static const EFI_GUID ACPI20 = { 0x8868e871, 0xe4f1, 0x11d3,
+            { 0xbc, 0x22, 0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81 } };
+        static const EFI_GUID ACPI10 = { 0xeb9d2d30, 0x2d88, 0x11d3,
+            { 0x9a, 0x16, 0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d } };
+        typedef struct { EFI_GUID guid; void *table; } cfg_ent_t;
+        cfg_ent_t *ct = (cfg_ent_t *)gST->ConfigurationTable;
+        for (UINTN i = 0; i < gST->NumberOfTableEntries; i++) {
+            const uint8_t *g = (const uint8_t *)&ct[i].guid;
+            int is20 = 1, is10 = 1;
+            for (int b = 0; b < 16; b++) {
+                if (g[b] != ((const uint8_t *)&ACPI20)[b]) is20 = 0;
+                if (g[b] != ((const uint8_t *)&ACPI10)[b]) is10 = 0;
+            }
+            if (is20 || is10) {
+                g_bootinfo.rsdp_phys = (uint64_t)(uintptr_t)ct[i].table;
+                serial_str("[boot] ACPI RSDP from EFI cfg table ok\n");
+                break;
+            }
+        }
+        if (!g_bootinfo.rsdp_phys)
+            serial_str("[boot] no RSDP in EFI cfg table — kernel scans BIOS area\n");
+    }
 
     /* ВАЖНО: после этого вызова никакие Boot Services больше нельзя трогать */
     st = exit_boot_services(image_handle);

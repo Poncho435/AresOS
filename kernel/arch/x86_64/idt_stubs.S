@@ -123,6 +123,17 @@ irq_common:
     call irq_dispatch
     mov rsp, rbx
 
+    # v0.4.0 (M5): планировщик мог попросить сменить поток ИЗ timer-IRQ.
+    # Кадры всех потоков одной формы: просто подменяем RSP на стеке-приёмнике.
+    mov rax, qword ptr [rip + g_sched_new_rsp]
+    test rax, rax
+    jz .Lnojump
+    mov rcx, qword ptr [rip + g_sched_old_rsp_slot]
+    mov [rcx], rsp              # старый поток заснул с ЭТОЙ точкой стека
+    mov rsp, rax                # новый поток: у него такой же кадр irq_common
+    mov qword ptr [rip + g_sched_new_rsp], 0
+.Lnojump:
+
     pop r15
     pop r14
     pop r13
@@ -167,12 +178,16 @@ IRQSTUB 45    # IRQ13 FPU
 IRQSTUB 46    # IRQ14 ATA primary
 IRQSTUB 47    # IRQ15 ATA secondary
 
-/* ===== вектора 48..255: «тихий» стаб на всё непредусмотренное =====
- * Сюда могут прилетать: залётный вектор LAPIC-таймера, оставленного
- * прошивкой включённым, MSI, неинициализированные линии и т.п.
- * CPU на внешнее прерывание error code НЕ кладёт — кадр ровно из 5
- * слов, поэтому достаточно bare iretq. EOI не шлём: эти вектора не от
- * legacy PIC, а «чужой» LAPIC без LAPIC-инициализации трогать нельзя. */
+/* ===== LAPIC-таймер (вектор 0x40, M4/M5): тот же кадр irq_common,
+       внутри irq_dispatch → sched_tick() → возможное переключение потока ===== */
+.extern g_sched_new_rsp
+.extern g_sched_old_rsp_slot
+IRQSTUB 64
+
+/* ===== вектора 48..255 (кроме 64): «тихий» стаб на непредусмотренное =====
+ * Сюда могут прилетать: залётные вектора, оставленные прошивкой, MSI и т.п.
+ * CPU на внешнее прерывание error code НЕ кладёт — кадр ровно из 5 слов,
+ * поэтому достаточно bare iretq. EOI не шлём. */
 .global spurious_vector_stub
 spurious_vector_stub:
     iretq

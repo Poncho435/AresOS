@@ -1,17 +1,24 @@
-/* AresOS — диспетчер аппаратных прерываний (IRQ 0..15 → вектора 32..47)
- * v0.3.1: sanity-проверка ВОЗВРАТНОГО кадра — защита от «iretq в мусор»,
- * которым VBox/NEM поражает нас после первого IRQ12 (rip летел в .bss). */
+/* AresOS — диспетчер аппаратных прерываний.
+ * v0.3.1: sanity-кадра; v0.4.0 (M4/M5): вектора
+ *   0x20 (32) PIT-тик (fallback), 0x21 (33) клавиатура, 0x2C (44) мышь,
+ *   0x40 (64) LAPIC-таймер → sched_tick (планировщик может сменить поток!).
+ * EOI: по активной модели (IOAPIC/LAPIC или legacy PIC). */
 #include "regs.h"
 #include "pic.h"
 #include "mouse.h"
+#include "keyboard.h"
+#include "lapic.h"
+#include "proc.h"
 #include "kprintf.h"
 
-#define IRQ_MOUSE_VECTOR 44   /* IRQ12 (slave) + база 0x20 */
+#define IRQ_PIT_VECTOR   32
+#define IRQ_KBD_VECTOR   33
+#define IRQ_MOUSE_VECTOR 44
+#define VECTOR_LAPIC_TMR 64
 
 extern char __text_start[], __text_end[];
 
 static int frame_sane(const regs_t *r) {
-    /* кадр iretq должен указывать в наш .text и наши селекторы */
     if (r->rip >= (uint64_t)__text_start && r->rip < (uint64_t)__text_end &&
         r->cs == 0x08 && r->ss == 0x10 && (r->rflags & 2))
         return 1;
@@ -28,14 +35,26 @@ void irq_dispatch(regs_t *r) {
     }
 
     switch (r->vector) {
+    case IRQ_PIT_VECTOR:                      /* PIT-тик (fallback-путь) */
+        pic_eoi((int)r->vector);
+        sched_tick();
+        return;
+    case IRQ_KBD_VECTOR:
+        keyboard_irq_handler();
+        break;
     case IRQ_MOUSE_VECTOR:
         mouse_irq_handler();
         break;
+    case VECTOR_LAPIC_TMR:                    /* LAPIC-таймер → планировщик */
+        lapic_eoi();
+        sched_tick();
+        return;
     default:
-        /* спурьё и неподключённые IRQ игнорируем */
         break;
     }
-    pic_eoi((int)r->vector);
+
+    if (lapic_active()) lapic_eoi();
+    else pic_eoi((int)r->vector);
 
     /* ПОСЛЕ-обработчика: если кадр испорчен во время обработки — не iretq-имся в мусор */
     if (!frame_sane(r)) {

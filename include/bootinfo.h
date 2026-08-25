@@ -30,6 +30,7 @@ typedef struct {
     uint64_t mmap_desc_size;   /* размер одного дескриптора, байт */
     uint32_t mmap_desc_version;
     uint32_t _reserved;
+    uint64_t rsdp_phys;        /* ACPI RSDP из EFI ConfigurationTable (0 = искать сканом) */
 } bootinfo_t;
 
 #endif

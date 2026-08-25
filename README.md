@@ -29,28 +29,31 @@ make debug         # + GDB-stub на :1234, далее `make gdb`
 
 Требования: `gcc`, `make`, `python3`, `qemu-system-x86`, `ovmf` (подробности — [docs/SETUP.md](docs/SETUP.md)).
 
-## Запуск (v0.3.4 — M3 + детектор кадра IRQ)
+## Запуск (v0.4.0 — M4+M5: прерывания, таймер, многозадачность)
 
 **VirtualBox — самый простой путь:**
-**[dist/aresos-vm-v0.3.4.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-vm-v0.3.4.zip)**
+**[dist/aresos-vm-v0.4.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-vm-v0.4.0.zip)**
 → распаковать → ВМ (Other 64-bit, 256 МБ, ✔EFI) → в «Носителях» к SATA прикрепить файл
 `aresos.vmdk` → Запустить. Никакой командной строки!
 
 **Реальное железо (флешка):**
-**[dist/aresos-usb-v0.3.4.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-usb-v0.3.4.zip)**
+**[dist/aresos-usb-v0.4.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-usb-v0.4.0.zip)**
 → `aresos.img` на флешку (balenaEtcher / Rufus DD) → Boot Menu → «UEFI: флешка».
 Пошагово: [docs/REALHARDWARE.md](docs/REALHARDWARE.md).
 
 **ISO для CD-привода (виртуалки):**
-**[dist/aresos-iso-v0.3.4.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-iso-v0.3.4.zip)**
+**[dist/aresos-iso-v0.4.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-iso-v0.4.0.zip)**
 → новая ВМ без жёсткого диска → прикрепить `aresos.iso` к CD-приводу → Запустить.
 
-> v0.3.4 — этап M3 закрыт: собственные таблицы страниц (identity + HHDM,
-> null-page guard, защита .text/RX и NX, CR0.WP), kernel-heap `kmalloc/kfree`
-> со стресс-тестом на миллион операций, и первый запуск настоящего .exe:
-> TESTPE.EXE (PE32+) разбирается PE-загрузчиком ядра по спецификации,
-> мапится на свой ImageBase и выполняется. Плюс всё из 0.2.5: ядро вшито
-> в BOOTX64.EFI, IDT 256 векторов, диагностика исключений, канарейка стека.
+> v0.4.0 — этапы **M4 + M5** закрыты: ядро находит ACPI/MADT через EFI,
+> маршрутизирует клавиатуру и мышь через IOAPIC (с автоматическим откатом
+> на legacy PIC/PIT), системный тик 100 Гц от LAPIC-таймера (калибровка по
+> PIT), клавиатура PS/2 (scancode→ASCII, F1..F10, стрелки), планировщик
+> round-robin с вытеснением тиком (ядровые потоки на отдельных стеках),
+> фоновые демоны heartbeat/sysmon, **диспетчер задач по F2** — список
+> процессов с состояниями и тиками CPU прямо на рабочем столе.
+> Плюс всё из v0.3.x: свои таблицы страниц + heap (стресс 1M операций),
+> запуск настоящего PE32+ TESTPE.EXE, живая мышь (фикс CS после lgdt).
 
 ## Документация
 

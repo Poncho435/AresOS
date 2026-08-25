@@ -43,8 +43,9 @@ extern void irq41(void); extern void irq42(void); extern void irq43(void);
 extern void irq44(void); extern void irq45(void); extern void irq46(void);
 extern void irq47(void);
 
-/* «тихий» стаб для всех векторов 48..255 (idt_stubs.S) */
+/* «тихий» стаб для всех векторов 48..255 (idt_stubs.S) + таймер 0x40 */
 extern void spurious_vector_stub(void);
+extern void irq64(void);
 
 static void (*const stub_table[IDT_HANDLERS])(void) = {
     isr0,  isr1,  isr2,  isr3,  isr4,  isr5,  isr6,  isr7,
@@ -72,6 +73,7 @@ void idt_init(void) {
         idt_set(i, stub_table[i]);
     for (; i < IDT_ENTRIES; i++)
         idt_set(i, spurious_vector_stub);
+    idt_set(64, irq64);   /* 0x40: LAPIC-таймер → sched_tick (M4/M5) */
 
     struct { uint16_t limit; uint64_t base; } __attribute__((packed)) idtr = {
         .limit = sizeof(idt) - 1,

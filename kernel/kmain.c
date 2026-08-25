@@ -12,6 +12,10 @@
 #include "pe.h"
 #include "pic.h"
 #include "mouse.h"
+#include "keyboard.h"
+#include "acpi.h"
+#include "lapic.h"
+#include "proc.h"
 #include "desktop.h"
 #include <stdint.h>
 
@@ -58,7 +62,45 @@ static void print_memory_summary(const bootinfo_t *bi) {
     kprintf("[mem] usable RAM total: %lu MiB\n", usable >> 20);
 }
 
-#define KERNEL_VERSION "0.3.4"
+#define KERNEL_VERSION "0.4.0"
+
+/* ---- фоновые демоны M5 (диспетчер задач покажет их в списке) ---- */
+#include "gfx.h"
+
+static void heartbeat_proc(void *arg) {
+    (void)arg;
+    int on = 0;
+    for (;;) {
+        /* мигающий огонёк в доке справа — видно, что фоновый поток живёт */
+        uint32_t x = gfx_width() - 24, y = gfx_height() - 30;
+        gfx_fill_rect(x, y, 12, 12, on ? GFX_RGB(0xFF, 0x9E, 0x49) : GFX_RGB(0x33, 0x36, 0x44));
+        on ^= 1;
+        proc_sleep(500);
+    }
+}
+
+static void sysmon_proc(void *arg) {
+    (void)arg;
+    for (;;) {
+        /* ТОЛЬКО serial: консоль держим чистой (статус виден в диспетчере задач) */
+        char num[24]; int i = 0;
+        uint64_t v = sched_ticks() / 100;
+        serial_write("[sysmon] bg alive, uptime=");
+        if (!v) serial_write("0");
+        while (v) { num[i++] = (char)('0' + v % 10); v /= 10; }
+        while (i) { char c[2] = { num[--i], 0 }; serial_write(c); }
+        serial_write(" s\n");
+        proc_sleep(5000);
+    }
+}
+
+/* обёртка: десктоп как обычный процесс (bi прячем глобально) */
+static bootinfo_t *g_bi;
+static uint64_t   g_total_mib, g_free_mib;
+static void desktop_proc(void *arg) {
+    (void)arg;
+    desktop_enter(g_bi, g_total_mib, g_free_mib);   /* не возвращается */
+}
 
 void kmain(bootinfo_t *bi) {
     serial_init();   /* первым делом — канал отладки */
@@ -120,17 +162,46 @@ void kmain(bootinfo_t *bi) {
     kprintf("[pmm] test: freed both, free pages=%lu (%lu MiB)\n",
             pmm_free_pages(), (pmm_free_pages() * 4096ULL) >> 20);
 
-    uint64_t free_mib = (pmm_free_pages() * 4096ULL) >> 20;
-    uint64_t total_mib = (pmm_total_pages() * 4096ULL) >> 20;
+    g_bi = bi;
+    g_free_mib = (pmm_free_pages() * 4096ULL) >> 20;
+    g_total_mib = (pmm_total_pages() * 4096ULL) >> 20;
 
-    if (fb_console_ready()) {
-        kprintf("\n[desktop] starting AresOS Desktop prototype...\n");
-        pic_remap();
-        mouse_init();
-        /* IRQ12 (bit4 slave) + cascade IRQ2 (bit2 master); остальное замаскировано */
-        pic_set_mask((uint8_t)~0x04, (uint8_t)~0x10);
-        desktop_enter(bi, total_mib, free_mib);   /* не возвращается */
+    if (!fb_console_ready()) {
+        kprintf("\nAresOS init complete. No framebuffer — halting.\n");
+        for (;;) __asm__ volatile ("hlt");
     }
+
+    /* ===== M4: IRQ-модель (IOAPIC+LAPIC при наличии ACPI, иначе PIC+PIT) ===== */
+    int lapic_ok = acpi_init(bi->rsdp_phys) && lapic_init();
+    keyboard_init();
+    pic_remap();
+    if (lapic_ok) {
+        ioapic_route_irq(1, 33);
+        ioapic_route_irq(12, 44);
+        pic_set_mask(0xFF, 0xFF);              /* PIC уходит с поля — всё через LAPIC */
+        kprintf("[irq] model: IOAPIC → LAPIC (kbd=33, mouse=44), timer=LAPIC 100Hz\n");
+    } else {
+        /* PIT ch0 как системный тик 100 Гц + IRQ1 (клавиатура) + IRQ12 (мышь) */
+        {
+            extern void pit_init_100hz(void);
+            pit_init_100hz();
+        }
+        pic_set_mask((uint8_t)~0x07, (uint8_t)~0x10);  /* IRQ0,IRQ1,cascade | IRQ12 */
+        kprintf("[irq] model: legacy PIC 8259, PIT tick 100 Hz, kbd=33, mouse=44\n");
+    }
+    mouse_init();
+
+    /* ===== M5: планировщик + процессы ===== */
+    proc_init();                                       /* kmain → процесс "idle" */
+    proc_spawn(heartbeat_proc, NULL, "heartbeat", PROC_F_BACKGROUND);
+    proc_spawn(sysmon_proc,    NULL, "sysmon",    PROC_F_BACKGROUND);
+    proc_spawn(desktop_proc,   NULL, "desktop",   0);
+
+    kprintf("\n[m5] scheduler ON: %s модель, тик 100 Гц — посмотри диспетчер (F2)!\n",
+            lapic_ok ? "LAPIC" : "PIC");
+
+    __asm__ volatile ("sti");
+    for (;;) __asm__ volatile ("hlt");          /* idle-поток кmain: паркуемся */
 
     kprintf("\nAresOS init complete. No framebuffer — halting.\n");
     for (;;) __asm__ volatile ("hlt");
