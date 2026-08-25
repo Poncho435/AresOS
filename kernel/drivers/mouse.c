@@ -16,6 +16,7 @@ static volatile int     g_left;
 static volatile int     g_moved;
 static uint8_t  g_packet[3];
 static uint8_t  g_cycle;
+static uint32_t g_irq_count;   /* v0.2.5: диагностика — первые IRQ12 логируем */
 
 /* ограничители — устанавливаются десктопом после инициализации графики */
 static int32_t g_max_x = 1024, g_max_y = 768;
@@ -41,6 +42,7 @@ static int mouse_write(uint8_t cmd) {
 }
 
 void mouse_init(void) {
+    g_irq_count = 0;
     /* слить возможный мусор в буфере */
     while (inb(PS2_STATUS) & 0x01) inb(PS2_DATA);
 
@@ -73,6 +75,9 @@ void mouse_set_limits(uint32_t max_x, uint32_t max_y) {
 
 void mouse_irq_handler(void) {
     uint8_t b = inb(PS2_DATA);
+    g_irq_count++;
+    if (g_irq_count <= 5)
+        kprintf("[mouse] IRQ12 #%lu byte=%#x\n", g_irq_count, (unsigned)b);
     switch (g_cycle) {
     case 0:
         if (!(b & 0x08)) return;          /* синхронизация пакета: bit3 всегда 1 */

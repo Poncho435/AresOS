@@ -40,10 +40,12 @@ int kvprintf(const char *fmt, va_list ap) {
     for (; *fmt; fmt++) {
         if (*fmt != '%') { emit(*fmt); written++; continue; }
         fmt++;
-        bool left = false, zero = false;
+        bool left = false, zero = false, alt = false;
         int width = 0, longs = 0;
-        while (*fmt == '-' || *fmt == '0') {
-            if (*fmt == '-') left = true; else zero = true;
+        while (*fmt == '-' || *fmt == '0' || *fmt == '#') {
+            if (*fmt == '-') left = true;
+            else if (*fmt == '0') zero = true;
+            else alt = true;                 /* '#' — альтернативная форма (0x… для hex) */
             fmt++;
         }
         while (*fmt >= '0' && *fmt <= '9') { width = width * 10 + (*fmt - '0'); fmt++; }
@@ -70,6 +72,7 @@ int kvprintf(const char *fmt, va_list ap) {
         }
         case 'x': case 'X': {
             uint64_t v = longs ? va_arg(ap, uint64_t) : (uint64_t)va_arg(ap, unsigned);
+            if (alt) { emit('0'); emit(*fmt); written += 2; }
             len = ull_to_str(num, v, 16, *fmt == 'X');
             break;
         }

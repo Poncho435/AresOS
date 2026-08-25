@@ -23,6 +23,18 @@ _start:
     shr rcx, 3                      # BSS выровнен по 16 байтам в linker.ld
     rep stosq
 
+    /* v0.2.5: канарейка под дном стека (стек растёт ВНИЗ к _stack_guard).
+       Если exception_handler обнаружит канарейки испорченными — стек
+       переполнен и ушёл в BSS (типичный источник «ret в стек»). */
+    mov rax, 0xA9E5C0FFEE15DA7A
+    lea rdi, [rip + _stack_guard]
+    mov ecx, 8
+.Lcanary:
+    mov [rdi], rax
+    add rdi, 8
+    dec ecx
+    jnz .Lcanary
+
     mov rdi, r12                    # первый аргумент kmain — bootinfo*
     and rsp, -16                    # SysV: rsp ≡ 0 (mod 16) в точке call
     call kmain
@@ -34,8 +46,11 @@ _start:
 
 .section .bss
 .align 16
+.global _stack_guard, _stack_bottom, _stack_top
+_stack_guard:                       # 64 байта магии под дном стека (v0.2.5)
+    .skip 64
 _stack_bottom:
-    .skip 65536                     # 64 КиБ стека ядра
+    .skip 262144                    # 256 КиБ стека ядра (было 64 — поднято в v0.2.5)
 _stack_top:
 
 .section .note.GNU-stack,"",@progbits

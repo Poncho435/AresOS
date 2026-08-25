@@ -55,7 +55,7 @@ static void print_memory_summary(const bootinfo_t *bi) {
     kprintf("[mem] usable RAM total: %lu MiB\n", usable >> 20);
 }
 
-#define KERNEL_VERSION "0.2.4"
+#define KERNEL_VERSION "0.2.5"
 
 void kmain(bootinfo_t *bi) {
     serial_init();   /* первым делом — канал отладки */
