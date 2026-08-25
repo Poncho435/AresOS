@@ -167,4 +167,14 @@ IRQSTUB 45    # IRQ13 FPU
 IRQSTUB 46    # IRQ14 ATA primary
 IRQSTUB 47    # IRQ15 ATA secondary
 
+/* ===== вектора 48..255: «тихий» стаб на всё непредусмотренное =====
+ * Сюда могут прилетать: залётный вектор LAPIC-таймера, оставленного
+ * прошивкой включённым, MSI, неинициализированные линии и т.п.
+ * CPU на внешнее прерывание error code НЕ кладёт — кадр ровно из 5
+ * слов, поэтому достаточно bare iretq. EOI не шлём: эти вектора не от
+ * legacy PIC, а «чужой» LAPIC без LAPIC-инициализации трогать нельзя. */
+.global spurious_vector_stub
+spurious_vector_stub:
+    iretq
+
 .section .note.GNU-stack,"",@progbits

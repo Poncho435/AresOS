@@ -82,10 +82,17 @@ $(KERNEL): $(KERNEL_OBJS) kernel/linker.ld
 	    -Wl,--build-id=none -o $@ $(KERNEL_OBJS)
 	@echo "[make] ядро: $@"
 
-$(BOOTELF): $(LOADER_OBJS) boot/loader.ld
+# v0.2.4: ядро влинковывается ВНУТРЬ загрузчика (символы _binary_kernel_elf_*):
+# загрузчику больше не нужен FAT/SimpleFileSystem, чтобы получить KERNEL.ELF.
+KBLOB := $(BUILD)/kernel_blob.o
+$(KBLOB): $(KERNEL)
+	@mkdir -p $(BUILD)
+	cd $(BUILD) && ld -r -b binary kernel.elf -o kernel_blob.o
+
+$(BOOTELF): $(LOADER_OBJS) $(KBLOB) boot/loader.ld
 	$(CC) $(LOADER_CFLAGS) -nostdlib -static-pie -T boot/loader.ld \
-	    -Wl,-e,efi_main -Wl,-z,norelro -Wl,--build-id=none -o $@ $(LOADER_OBJS)
-	@echo "[make] загрузчик (ELF PIE, сегменты выровнены по 0x1000): $@"
+	    -Wl,-e,efi_main -Wl,-z,norelro -Wl,--build-id=none -o $@ $(LOADER_OBJS) $(KBLOB)
+	@echo "[make] загрузчик (ELF PIE, ядро вшито, сегменты выровнены): $@"
 
 $(BOOTEFI): $(BOOTELF)
 	$(PYTHON) tools/elf2efi.py $< $@

@@ -55,21 +55,9 @@ static void print_memory_summary(const bootinfo_t *bi) {
     kprintf("[mem] usable RAM total: %lu MiB\n", usable >> 20);
 }
 
-#define KERNEL_VERSION "0.2.3-diag"
+#define KERNEL_VERSION "0.2.4"
 
 void kmain(bootinfo_t *bi) {
-    /* M5 diag-маркер (v0.2.2): первая инструкция ядра — циановая полоса.
-       Видна, только если загрузчик дошёл до ExitBootServices и прыгнул сюда. */
-    if (bi && bi->fb.phys_base && bi->fb.format <= FB_FORMAT_BGR &&
-        bi->fb.pitch && bi->fb.width && bi->fb.height > 128) {
-        uint32_t v = (bi->fb.format == FB_FORMAT_RGB) ? 0x0000C0C0u : 0x00C0C000u;
-        uint32_t *fb = (uint32_t *)(uintptr_t)bi->fb.phys_base;
-        for (uint32_t y = 96; y < 128; y++) {
-            uint32_t *line = fb + (uint64_t)y * bi->fb.pitch;
-            for (uint32_t x = 0; x < bi->fb.width; x++) line[x] = v;
-        }
-    }
-
     serial_init();   /* первым делом — канал отладки */
 
     kprintf("\n");
@@ -84,8 +72,22 @@ void kmain(bootinfo_t *bi) {
     gdt_init();
     kprintf("[gdt] GDT loaded (kcode=0x08, kdata=0x10)\n");
 
+    /* v0.2.4: IDT (все 256 векторов) — ДО первой записи в framebuffer.
+       Любой залётный вектор/исключение теперь ловится нашим обработчиком,
+       а не улетает в висячий IDT прошивки или в triple fault. */
     idt_init();
-    kprintf("[idt] IDT loaded: 32 exception handlers armed\n");
+    kprintf("[idt] IDT loaded: 256 vectors armed (exc + PIC IRQ + spurious-safe)\n");
+
+    /* M5 diag-маркер: ядро живо и прошло инициализацию IDT — циановая полоса. */
+    if (bi->fb.phys_base && bi->fb.format <= FB_FORMAT_BGR &&
+        bi->fb.pitch && bi->fb.width && bi->fb.height > 128) {
+        uint32_t v = (bi->fb.format == FB_FORMAT_RGB) ? 0x00C0C000u : 0x0000C0C0u;
+        uint32_t *fb = (uint32_t *)(uintptr_t)bi->fb.phys_base;
+        for (uint32_t y = 96; y < 128; y++) {
+            uint32_t *line = fb + (uint64_t)y * bi->fb.pitch;
+            for (uint32_t x = 0; x < bi->fb.width; x++) line[x] = v;
+        }
+    }
 
     fb_console_init(&bi->fb);
     if (fb_console_ready()) {

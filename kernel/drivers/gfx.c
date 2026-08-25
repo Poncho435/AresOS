@@ -6,10 +6,13 @@
 static bootinfo_fb_t g_fb;
 static int g_ready;
 
+/* Упаковка цвета по UEFI-семантике байтов (little-endian u32):
+ *   FB_FORMAT_RGB = PixelRedGreenBlue: байт0=R → u32 = R | G<<8 | B<<16
+ *   FB_FORMAT_BGR = PixelBlueGreenRed: байт0=B → u32 = B | G<<8 | R<<16 */
 static uint32_t pack(gfx_color_t c) {
     if (g_fb.format == FB_FORMAT_RGB)
-        return ((uint32_t)c.r << 16) | ((uint32_t)c.g << 8) | c.b;
-    return ((uint32_t)c.b << 16) | ((uint32_t)c.g << 8) | c.r;
+        return ((uint32_t)c.b << 16) | ((uint32_t)c.g << 8) | c.r;
+    return ((uint32_t)c.r << 16) | ((uint32_t)c.g << 8) | c.b;
 }
 
 static inline uint32_t *fbp(void) {

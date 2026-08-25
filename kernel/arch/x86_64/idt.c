@@ -1,5 +1,8 @@
 /* AresOS — IDT: таблица дескрипторов прерываний (Intel SDM vol.3, гл. 6).
- * Пока только исключения CPU (0..31): IRQ/APIC подключим на M4. */
+ * v0.2.4: ВСЕ 256 векторов вооружены. 0..31 — диагностика исключений,
+ * 32..47 — PIC IRQ через irq_dispatch, 48..255 — «тихий» iretq-стаб
+ * (залётный LAPIC-таймер прошивки / MSI / мусор не уронит VM тройной
+ * ошибкой: вектор за пределы idt.limit — это #GP→#DF→triple fault). */
 #include <stdint.h>
 
 typedef struct {
@@ -12,7 +15,8 @@ typedef struct {
     uint32_t zero;
 } __attribute__((packed)) idt_entry_t;
 
-#define IDT_ENTRIES 48
+#define IDT_ENTRIES 256
+#define IDT_HANDLERS 48       /* реальных обработчиков в stub_table */
 #define GATE_INTERRUPT 0x8E   /* P=1, DPL=0, type=1110 (64-bit interrupt gate) */
 #define SEL_KCODE      0x08
 
@@ -39,7 +43,10 @@ extern void irq41(void); extern void irq42(void); extern void irq43(void);
 extern void irq44(void); extern void irq45(void); extern void irq46(void);
 extern void irq47(void);
 
-static void (*const stub_table[IDT_ENTRIES])(void) = {
+/* «тихий» стаб для всех векторов 48..255 (idt_stubs.S) */
+extern void spurious_vector_stub(void);
+
+static void (*const stub_table[IDT_HANDLERS])(void) = {
     isr0,  isr1,  isr2,  isr3,  isr4,  isr5,  isr6,  isr7,
     isr8,  isr9,  isr10, isr11, isr12, isr13, isr14, isr15,
     isr16, isr17, isr18, isr19, isr20, isr21, isr22, isr23,
@@ -60,8 +67,11 @@ static void idt_set(int n, void (*handler)(void)) {
 }
 
 void idt_init(void) {
-    for (int i = 0; i < IDT_ENTRIES; i++)
+    int i;
+    for (i = 0; i < IDT_HANDLERS; i++)
         idt_set(i, stub_table[i]);
+    for (; i < IDT_ENTRIES; i++)
+        idt_set(i, spurious_vector_stub);
 
     struct { uint16_t limit; uint64_t base; } __attribute__((packed)) idtr = {
         .limit = sizeof(idt) - 1,

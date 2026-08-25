@@ -21,10 +21,11 @@ static uint32_t g_cur_x, g_cur_y;
 static uint32_t g_fg, g_bg;
 
 static uint32_t make_pixel(uint8_t r, uint8_t g, uint8_t b) {
+    /* UEFI-семантика байтов: RGB → байт0=R (u32 = R|G<<8|B<<16);
+     * BGR → байт0=B (u32 = B|G<<8|R<<16). */
     if (g_fb.format == FB_FORMAT_RGB)
-        return ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
-    /* BGR по умолчанию (типично для OVMF) */
-    return ((uint32_t)b << 16) | ((uint32_t)g << 8) | r;
+        return ((uint32_t)b << 16) | ((uint32_t)g << 8) | r;
+    return ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
 }
 
 static inline uint32_t *fb_ptr(void) {

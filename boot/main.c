@@ -112,7 +112,40 @@ typedef struct {
 
 #define PT_LOAD 1
 
-/* ===================== чтение KERNEL.ELF ===================== */
+/* ===================== ядро, вшитое прямо в BOOTX64.EFI (v0.2.4) =====================
+ * Makefile влинковывает build/kernel.elf в загрузчик как бинарный объект
+ * (ld -r -b binary) → символы ниже. Так мы получаем файл ядра БЕЗ единого
+ * обращения к FAT/SimpleFileSystem: прошивка VBox подала признаки нестабиль-
+ * ности ровно в fs->OpenVolume() на El Torito FAT12 — обходим этот путь совсем. */
+extern const uint8_t _binary_kernel_elf_start[];
+extern const uint8_t _binary_kernel_elf_end[];
+
+static EFI_STATUS read_kernel_embedded(uint8_t **out_buf, UINTN *out_size) {
+    const uint8_t *s = _binary_kernel_elf_start;
+    const uint8_t *e = _binary_kernel_elf_end;
+    if (e <= s)
+        return EFI_ERROR_BIT | 10;   /* payload не влинкован (старая сборка) */
+
+    diag_band(8, 16, 0xFF, 0xA0, 0x00);           /* R2: payload найден внутри себя */
+    serial_str("[boot] embedded kernel payload present\n");
+
+    UINTN size = (UINTN)(e - s);
+    if (size < 64 || !(s[0] == 0x7F && s[1] == 'E' && s[2] == 'L' && s[3] == 'F')) {
+        log_line("[boot] FAIL: embedded payload is not an ELF");
+        return EFI_ERROR_BIT | 1;
+    }
+    diag_band(16, 24, 0xE0, 0xE0, 0x00);          /* R3: ELF-магия верна */
+    serial_str("[boot] embedded payload ELF magic ok\n");
+
+    log_hex("[boot] embedded KERNEL size = ", size);
+    diag_band(24, 32, 0x80, 0xE0, 0x00);          /* R4: размер адекватный */
+
+    *out_buf = (uint8_t *)s;
+    *out_size = size;
+    return EFI_SUCCESS;
+}
+
+/* ===================== чтение KERNEL.ELF (запасной путь, ESP FAT) ===================== */
 static EFI_STATUS read_kernel_file(uint8_t **out_buf, UINTN *out_size) {
     EFI_STATUS st;
     EFI_LOADED_IMAGE_PROTOCOL *li;
@@ -312,21 +345,27 @@ static EFI_STATUS exit_boot_services(EFI_HANDLE image) {
     return EFI_ERROR_BIT | 1;
 }
 
-/* ===================== diag-маркеры (v0.2.2): полосы в fb напрямую =====================
+/* ===================== diag-маркеры: полосы в fb напрямую =====================
  * Рисуем в GOP framebuffer БЕЗ прошивки и консоли. По фото экрана видно,
- * до какого этапа дошла загрузка (даже если падает текст/serial):
- *   M1 синий весь экран — загрузчик жив, GOP найден, fb пишется
- *   M2 зелёная полоса   — KERNEL.ELF прочитан с ESP
- *   M3 бирюзовая        — PT_LOAD ядра размещены в памяти
- *   M4 пурпурная        — ExitBootServices прошёл (прошивка отпустила)
- *   M5 циановая         — ставит ядро: точка входа выполняется (kmain)
+ * до какого этапа дошла загрузка (даже если падает текст/serial).
+ * Легенда v0.2.4 (ядро вшито в BOOTX64.EFI — файловая система не нужна):
+ *   M1 синий весь экран   — загрузчик жив, GOP найден, fb пишется
+ *   R1..R4 оранжевые слои — (fallback: шаги чтения с ESP) /
+ *                           встроенный payload: найден / ELF-магия / размер ок
+ *   M2 зелёная полоса     — образ ядра получен и проверен
+ *   M3 бирюзовая (y56-64) — PT_LOAD ядра размещены в памяти
+ *   M4 пурпурная (y64-96) — ExitBootServices прошёл (прошивка отпустила)
+ *   M5 циановая (y96-128) — ставит ядро: kmain отработал инициализацию IDT
  */
 static void diag_band(uint32_t y0, uint32_t y1, uint8_t r, uint8_t g, uint8_t b) {
     if (!g_bootinfo.fb.phys_base || g_bootinfo.fb.format > FB_FORMAT_BGR) return;
     if (!g_bootinfo.fb.pitch || !g_bootinfo.fb.width || !g_bootinfo.fb.height) return;
+    /* UEFI-семантика байтов в памяти (little-endian u32):
+     *   FB_FORMAT_RGB = PixelRedGreenBlue: байт0=R → u32 = R | G<<8 | B<<16
+     *   FB_FORMAT_BGR = PixelBlueGreenRed: байт0=B → u32 = B | G<<8 | R<<16 */
     uint32_t v = (g_bootinfo.fb.format == FB_FORMAT_RGB)
-               ? ((uint32_t)r << 16) | ((uint32_t)g << 8) | b
-               : ((uint32_t)b << 16) | ((uint32_t)g << 8) | r;
+               ? ((uint32_t)b << 16) | ((uint32_t)g << 8) | r
+               : ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
     uint32_t *fb = (uint32_t *)(uintptr_t)g_bootinfo.fb.phys_base;
     if (y1 > g_bootinfo.fb.height) y1 = g_bootinfo.fb.height;
     for (uint32_t y = y0; y < y1; y++) {
@@ -352,7 +391,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
 
     if (gST->ConOut) {
         gST->ConOut->ClearScreen(gST->ConOut);
-        screen_print(u"AresOS loader (BOOTX64.EFI) v0.2.3-diag\r\n");
+        screen_print(u"AresOS loader (BOOTX64.EFI) v0.2.4\r\n");
     }
 
     /* графику поднимаем ПЕРВОЙ (SetMode сам очищает экран) — нужна для маркеров */
@@ -364,11 +403,15 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
     /* сторожевой таймер — выключить (иначе ребут через 5 минут) */
     gBS->SetWatchdogTimer(0, 0, 0, (const CHAR16 *)0);
 
-    uint8_t *kbuf;
-    UINTN ksize;
-    EFI_STATUS st = read_kernel_file(&kbuf, &ksize);
-    if (EFI_ERROR(st)) goto hang;
-    diag_band(0, 32, 0x00, 0xC0, 0x00);              /* M2: ядро прочитано */
+    uint8_t *kbuf = (uint8_t *)0;
+    UINTN ksize = 0;
+    EFI_STATUS st = read_kernel_embedded(&kbuf, &ksize);
+    if (EFI_ERROR(st)) {
+        serial_str("[boot] no embedded payload — fallback to KERNEL.ELF on ESP\n");
+        st = read_kernel_file(&kbuf, &ksize);
+        if (EFI_ERROR(st)) goto hang;
+    }
+    diag_band(0, 32, 0x00, 0xC0, 0x00);              /* M2: ядро у нас */
     serial_str("[diag] M2 kernel-file-read-ok\n");
 
     uint64_t entry;
