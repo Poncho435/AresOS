@@ -65,7 +65,7 @@ static void draw_panel(void) {
     gfx_fill_rect(0, PANEL_H - 2, g_scr_w, 2, COL_ACCENT);
     gfx_text_shadow(10, 11, "AresOS", COL_ACCENT, GFX_RGB(0, 0, 0));
     gfx_text(88, 11, "Desktop prototype", COL_PANEL_TXT);
-    gfx_text(g_scr_w - 96 - 8, 11, "v0.3.2", COL_PANEL_TXT);
+    gfx_text(g_scr_w - 96 - 8, 11, "v0.3.3", COL_PANEL_TXT);
 }
 
 static void draw_dock(void) {
@@ -136,7 +136,7 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
     mouse_set_limits(g_scr_w, g_scr_h);
 
     /* тексты окна */
-    strcpy_small(g_win.l1, "Kernel 0.3.2 (x86-64)");
+    strcpy_small(g_win.l1, "Kernel 0.3.3 (x86-64)");
     {
         char buf[48];
         char num[16];
