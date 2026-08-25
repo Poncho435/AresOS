@@ -6,6 +6,7 @@
 #include "mouse.h"
 #include "pic.h"
 #include "kprintf.h"
+#include "pe.h"
 #include <stdint.h>
 
 #define PANEL_H 30
@@ -25,7 +26,7 @@ static const gfx_color_t COL_WIN_BAR_T = GFX_RGB(0xFF, 0xFF, 0xFF);
 /* ---------------- окно ---------------- */
 typedef struct {
     int32_t x, y, w, h;
-    char l1[48], l2[48], l3[48], l4[48], l5[48];
+    char l1[48], l2[48], l3[48], l4[48], l5[48], l6[48];
 } win_t;
 
 static win_t g_win;
@@ -47,6 +48,9 @@ static void draw_window(const win_t *w) {
     gfx_text(w->x + 12, w->y + WIN_TITLE_H + 46, w->l3, COL_WIN_TXT);
     gfx_text(w->x + 12, w->y + WIN_TITLE_H + 62, w->l4, COL_WIN_TXT);
     gfx_text(w->x + 12, w->y + WIN_TITLE_H + 86, w->l5, GFX_RGB(0x66, 0x66, 0x77));
+    /* PE-тест (M3): результат TESTPE.EXE */
+    if (w->l6[0])
+        gfx_text(w->x + 12, w->y + WIN_TITLE_H + 110, w->l6, GFX_RGB(0x11, 0x77, 0x33));
     gfx_frame_rect(w->x, w->y, w->w, w->h, GFX_RGB(0x0F, 0x14, 0x30));
 }
 
@@ -61,7 +65,7 @@ static void draw_panel(void) {
     gfx_fill_rect(0, PANEL_H - 2, g_scr_w, 2, COL_ACCENT);
     gfx_text_shadow(10, 11, "AresOS", COL_ACCENT, GFX_RGB(0, 0, 0));
     gfx_text(88, 11, "Desktop prototype", COL_PANEL_TXT);
-    gfx_text(g_scr_w - 96 - 8, 11, "v0.2.5", COL_PANEL_TXT);
+    gfx_text(g_scr_w - 96 - 8, 11, "v0.3.0", COL_PANEL_TXT);
 }
 
 static void draw_dock(void) {
@@ -132,7 +136,7 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
     mouse_set_limits(g_scr_w, g_scr_h);
 
     /* тексты окна */
-    strcpy_small(g_win.l1, "Kernel 0.2.5 (x86-64)");
+    strcpy_small(g_win.l1, "Kernel 0.3.0 (x86-64)");
     {
         char buf[48];
         char num[16];
@@ -158,12 +162,37 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
     strcpy_small(g_win.l5, "[ drag me by title bar! ]");
 
     g_win.w = 400;
-    g_win.h = WIN_TITLE_H + 110;
+    g_win.h = WIN_TITLE_H + 126;
     g_win.x = (int32_t)(g_scr_w > 400 ? (g_scr_w - 400) / 2 : 0);
     g_win.y = (int32_t)(g_scr_h > 220 ? (g_scr_h - 220) / 2 : 0);
+    g_win.l6[0] = 0;
 
     draw_screen();
     kprintf("[desktop] %lux%lu ready; window drag enabled\n", g_scr_w, g_scr_h);
+
+    /* ===== M3: запуск TESTPE.EXE через PE-загрузчик ядра =====
+     * Квадрат рисуется ПОСЛЕ обоев — иначе градиент его сотрёт. */
+    {
+        int ret = pe_demo_run();
+        static const char hex[] = "0123456789ABCDEF";
+        char *p = g_win.l6;
+        if ((uint32_t)ret == ARES_PE_TEST_OK) {
+            strcpy_small(g_win.l6, "PE test: OK (ret=0xA2E5)");
+        } else {
+            strcpy_small(g_win.l6, "PE test: FAIL ret=");
+            while (*p) p++;
+            uint32_t v = (uint32_t)ret;
+            *p++ = v & 0x80000000u ? '-' : '0';
+            if (!(v & 0x80000000u)) {
+                for (int i = 28; i >= 0; i -= 4) *p++ = hex[(v >> i) & 0xF];
+            } else {
+                v = (uint32_t)(-(int32_t)v);
+                for (int i = 28; i >= 4; i -= 4) *p++ = hex[(v >> i) & 0xF];
+            }
+            *p = 0;
+        }
+        draw_window(&g_win);   /* обновить окно: появилась строка l6 */
+    }
 
     /* включить прерывания: PIC запрограммирован, мышь ARM-нута */
     __asm__ volatile ("sti");

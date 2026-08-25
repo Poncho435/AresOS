@@ -29,27 +29,28 @@ make debug         # + GDB-stub на :1234, далее `make gdb`
 
 Требования: `gcc`, `make`, `python3`, `qemu-system-x86`, `ovmf` (подробности — [docs/SETUP.md](docs/SETUP.md)).
 
-## Запуск (v0.2.5 — ядро вшито в загрузчик!)
+## Запуск (v0.3.0 — M3: своя память + первый .exe!)
 
 **VirtualBox — самый простой путь:**
-**[dist/aresos-vm-v0.2.5.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-vm-v0.2.5.zip)**
+**[dist/aresos-vm-v0.3.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-vm-v0.3.0.zip)**
 → распаковать → ВМ (Other 64-bit, 256 МБ, ✔EFI) → в «Носителях» к SATA прикрепить файл
 `aresos.vmdk` → Запустить. Никакой командной строки!
 
 **Реальное железо (флешка):**
-**[dist/aresos-usb-v0.2.5.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-usb-v0.2.5.zip)**
+**[dist/aresos-usb-v0.3.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-usb-v0.3.0.zip)**
 → `aresos.img` на флешку (balenaEtcher / Rufus DD) → Boot Menu → «UEFI: флешка».
 Пошагово: [docs/REALHARDWARE.md](docs/REALHARDWARE.md).
 
 **ISO для CD-привода (виртуалки):**
-**[dist/aresos-iso-v0.2.5.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-iso-v0.2.5.zip)**
+**[dist/aresos-iso-v0.3.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-iso-v0.3.0.zip)**
 → новая ВМ без жёсткого диска → прикрепить `aresos.iso` к CD-приводу → Запустить.
 
-> v0.2.5: ядро влинковано прямо в BOOTX64.EFI — загрузчику больше не нужна
-> файловая система прошивки (обход падения в OpenVolume на VBox). IDT ядра
-> вооружает все 256 векторов с безопасными стабами, исправлена упаковка цветов
-> RGB/BGR, стек ядра 256 КиБ с канарейкой, исключения печатают декодированный
-> error code / CR3 / IDTR и зону rip, мышь логирует первые IRQ12.
+> v0.3.0 — этап M3 закрыт: собственные таблицы страниц (identity + HHDM,
+> null-page guard, защита .text/RX и NX, CR0.WP), kernel-heap `kmalloc/kfree`
+> со стресс-тестом на миллион операций, и первый запуск настоящего .exe:
+> TESTPE.EXE (PE32+) разбирается PE-загрузчиком ядра по спецификации,
+> мапится на свой ImageBase и выполняется. Плюс всё из 0.2.5: ядро вшито
+> в BOOTX64.EFI, IDT 256 векторов, диагностика исключений, канарейка стека.
 
 ## Документация
 

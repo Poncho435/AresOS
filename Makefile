@@ -49,6 +49,24 @@ BOOTEFI := $(BUILD)/BOOTX64.EFI
 IMG     := $(BUILD)/aresos.img
 ISO     := $(BUILD)/aresos.iso
 
+# ---- тестовое PE-приложение: apps/testpe.c → flat.bin → TESTPE.EXE → вшиваем в ядро ----
+APPEXE  := $(BUILD)/TESTPE.EXE
+APPBLOB := $(BUILD)/testpe_blob.o
+
+$(BUILD)/testpe.o: apps/testpe.c
+	@mkdir -p $(BUILD)
+	$(CC) $(COMMON_FLAGS) -fno-pic -fno-pie -Iinclude -c $< -o $@
+
+$(BUILD)/testpe.bin: $(BUILD)/testpe.o
+	ld --oformat binary -Ttext 0 -e ares_main -o $@ $<
+
+$(APPEXE): $(BUILD)/testpe.bin
+	$(PYTHON) tools/mkpe.py $< $@ --imagebase 0x400000000 --subsystem 3
+	$(PYTHON) tools/mkpe.py --verify $@
+
+$(APPBLOB): $(APPEXE)
+	cd $(BUILD) && ld -r -b binary TESTPE.EXE -o testpe_blob.o
+
 # ---- OVMF (прошивка UEFI для QEMU) ----
 OVMF_CODE ?= $(firstword $(wildcard /usr/share/OVMF/OVMF_CODE.fd \
     /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/ovmf/OVMF.fd \
@@ -60,6 +78,7 @@ QEMUFLAGS := -machine q35 -m 256M -net none \
     -drive format=raw,if=ide,file=$(IMG) \
     -serial stdio
 
+.DEFAULT_GOAL := all
 .PHONY: all run debug gdb verify clean tools-check
 all: $(IMG) $(ISO)
 
@@ -77,10 +96,10 @@ $(OBJD)/%.o: %.S
 	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
 
 # ==================== линковка ====================
-$(KERNEL): $(KERNEL_OBJS) kernel/linker.ld
+$(KERNEL): $(KERNEL_OBJS) $(APPBLOB) kernel/linker.ld
 	$(CC) $(KERNEL_CFLAGS) -nostdlib -static -T kernel/linker.ld \
-	    -Wl,--build-id=none -o $@ $(KERNEL_OBJS)
-	@echo "[make] ядро: $@"
+	    -Wl,--build-id=none -o $@ $(KERNEL_OBJS) $(APPBLOB)
+	@echo "[make] ядро (+ TESTPE.EXE вшит): $@"
 
 # v0.2.4: ядро влинковывается ВНУТРЬ загрузчика (символы _binary_kernel_elf_*):
 # загрузчику больше не нужен FAT/SimpleFileSystem, чтобы получить KERNEL.ELF.
@@ -99,18 +118,20 @@ $(BOOTEFI): $(BOOTELF)
 	$(PYTHON) tools/elf2efi.py --verify $@
 
 # ==================== загрузочный образ ====================
-$(IMG): $(KERNEL) $(BOOTEFI)
+$(IMG): $(KERNEL) $(BOOTEFI) $(APPEXE)
 	@printf 'AresOS boot disk (ESP).\r\nEFI/BOOT/BOOTX64.EFI loads KERNEL.ELF\r\n' > $(BUILD)/README.TXT
 	$(PYTHON) tools/mkesp.py $@ \
 	    --file KERNEL.ELF=$(KERNEL) \
 	    --file EFI/BOOT/BOOTX64.EFI=$(BOOTEFI) \
+	    --file TESTPE.EXE=$(APPEXE) \
 	    --file README.TXT=$(BUILD)/README.TXT
 
 # ISO для виртуальных машин (ISO9660 + El Torito UEFI)
-$(ISO): $(KERNEL) $(BOOTEFI)
+$(ISO): $(KERNEL) $(BOOTEFI) $(APPEXE)
 	$(PYTHON) tools/mkiso.py $@ \
 	    --file KERNEL.ELF=$(KERNEL) \
-	    --file EFI/BOOT/BOOTX64.EFI=$(BOOTEFI)
+	    --file EFI/BOOT/BOOTX64.EFI=$(BOOTEFI) \
+	    --file TESTPE.EXE=$(APPEXE)
 
 # ==================== запуск ====================
 $(BUILD)/OVMF_VARS.fd:

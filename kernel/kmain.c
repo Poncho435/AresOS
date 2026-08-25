@@ -7,6 +7,9 @@
 #include "kprintf.h"
 #include "fb_console.h"
 #include "pmm.h"
+#include "vmm.h"
+#include "heap.h"
+#include "pe.h"
 #include "pic.h"
 #include "mouse.h"
 #include "desktop.h"
@@ -55,7 +58,7 @@ static void print_memory_summary(const bootinfo_t *bi) {
     kprintf("[mem] usable RAM total: %lu MiB\n", usable >> 20);
 }
 
-#define KERNEL_VERSION "0.2.5"
+#define KERNEL_VERSION "0.3.0"
 
 void kmain(bootinfo_t *bi) {
     serial_init();   /* первым делом — канал отладки */
@@ -101,6 +104,12 @@ void kmain(bootinfo_t *bi) {
     print_memory_summary(bi);
 
     pmm_init(bi);
+
+    /* ===== M3: своя виртуальная память + куча ===== */
+    vmm_init(bi);          /* свои таблицы: identity+HHDM, null-guard, NX, WP */
+    heap_init();           /* арена кучи через VMM */
+    heap_stress_test();    /* DoD M3: миллион случайных alloc/free */
+    pe_demo_init(&bi->fb); /* готовим контекст для TESTPE.EXE (запустит десктоп) */
 
     /* дымовой тест аллокатора */
     uint64_t a = pmm_alloc_page();

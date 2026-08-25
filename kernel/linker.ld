@@ -12,12 +12,16 @@ SECTIONS
     __kernel_start = .;
 
     .text : ALIGN(0x1000) {
+        __text_start = .;
         *(.text .text.*)
+        __text_end = .;
     }
 
     . = ALIGN(0x1000);
     .rodata : {
+        __rodata_start = .;
         *(.rodata .rodata.* .srodata .srodata.*)
+        __rodata_end = .;
     }
 
     . = ALIGN(0x1000);
