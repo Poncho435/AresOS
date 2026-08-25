@@ -24,6 +24,9 @@ static const gfx_color_t COL_WIN_BAR   = GFX_RGB(0x2B, 0x3E, 0x7A);
 static const gfx_color_t COL_WIN_BAR_T = GFX_RGB(0xFF, 0xFF, 0xFF);
 
 /* ---------------- окно ---------------- */
+static void strcpy_small(char *dst, const char *src);
+static void u32dec(uint32_t v, char *out);
+
 typedef struct {
     int32_t x, y, w, h;
     char l1[48], l2[48], l3[48], l4[48], l5[48], l6[48];
@@ -65,7 +68,7 @@ static void draw_panel(void) {
     gfx_fill_rect(0, PANEL_H - 2, g_scr_w, 2, COL_ACCENT);
     gfx_text_shadow(10, 11, "AresOS", COL_ACCENT, GFX_RGB(0, 0, 0));
     gfx_text(88, 11, "Desktop prototype", COL_PANEL_TXT);
-    gfx_text(g_scr_w - 96 - 8, 11, "v0.3.3", COL_PANEL_TXT);
+    gfx_text(g_scr_w - 96 - 8, 11, "v0.3.4", COL_PANEL_TXT);
 }
 
 static void draw_dock(void) {
@@ -80,6 +83,20 @@ static void draw_dock(void) {
     gfx_fill_rect(56, y + 8, 30, 30, c2);
     gfx_fill_rect(96, y + 8, 30, 30, c3);
     gfx_text(16, g_scr_h - 10, "kernel", COL_PANEL_TXT);
+}
+
+/* v0.3.4: статус мыши — в ПАНЕЛЬ (не в консоль! спам консоли «уезжал вниз») */
+static void draw_mouse_status(void) {
+    char buf[40], num[12];
+    char *p = buf;
+    *p++ = 'x'; *p++ = '=';
+    u32dec((uint32_t)mouse_x(), num);   strcpy_small(p, num); while (*p) p++;
+    *p++ = ' '; *p++ = 'y'; *p++ = '=';
+    u32dec((uint32_t)mouse_y(), num);   strcpy_small(p, num); while (*p) p++;
+    *p++ = ' '; *p++ = 'i'; *p++ = 'r'; *p++ = 'q'; *p++ = '=';
+    u32dec(mouse_irq_count(), num);     strcpy_small(p, num);
+    gfx_fill_rect(g_scr_w - 300, 2, 196, PANEL_H - 4, COL_PANEL);
+    gfx_text(g_scr_w - 296, 11, buf, COL_PANEL_TXT);
 }
 
 static void draw_screen(void) {
@@ -136,7 +153,7 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
     mouse_set_limits(g_scr_w, g_scr_h);
 
     /* тексты окна */
-    strcpy_small(g_win.l1, "Kernel 0.3.3 (x86-64)");
+    strcpy_small(g_win.l1, "Kernel 0.3.4 (x86-64)");
     {
         char buf[48];
         char num[16];
@@ -246,18 +263,21 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
 
         g_buttons_old = (uint8_t)left;
 
-        /* v0.3.1: ДИАГНОСТИКА связки sti+hlt+первый IRQ на VBox/NEM —
-         * hlt убран: IRQ всегда застаёт код РАБОТАЮЩИМ, а не спящим.
-         * pause — мягкий спин; счётчик IRQ печатаем из ГЛАВНОГО контекста. */
+        /* v0.3.4: статус мыши — в панель, а не спамом в консоль */
         {
             static uint32_t last_irq = 0;
             uint32_t c = mouse_irq_count();
             if (c != last_irq) {
+                if (!last_irq)
+                    kprintf("[mouse] IRQ12 живы — CS-фикс v0.3.3 победил (дальше молчу)\n");
                 last_irq = c;
-                kprintf("[mouse] IRQ12 #%lu x=%ld y=%ld (кадр цел — десктоп жив)\n",
-                        c, (long)mouse_x(), (long)mouse_y());
+                draw_mouse_status();
             }
         }
-        __asm__ volatile ("pause");
+
+        if (moved)
+            draw_mouse_status();
+
+        __asm__ volatile ("hlt");   /* IRQ12 нас разбудит (фикс v0.3.3 это позволяет) */
     }
 }

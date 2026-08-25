@@ -391,7 +391,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
 
     if (gST->ConOut) {
         gST->ConOut->ClearScreen(gST->ConOut);
-        screen_print(u"AresOS loader (BOOTX64.EFI) v0.3.3\r\n");
+        screen_print(u"AresOS loader (BOOTX64.EFI) v0.3.4\r\n");
     }
 
     /* графику поднимаем ПЕРВОЙ (SetMode сам очищает экран) — нужна для маркеров */

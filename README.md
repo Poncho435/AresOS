@@ -29,23 +29,23 @@ make debug         # + GDB-stub на :1234, далее `make gdb`
 
 Требования: `gcc`, `make`, `python3`, `qemu-system-x86`, `ovmf` (подробности — [docs/SETUP.md](docs/SETUP.md)).
 
-## Запуск (v0.3.3 — M3 + детектор кадра IRQ)
+## Запуск (v0.3.4 — M3 + детектор кадра IRQ)
 
 **VirtualBox — самый простой путь:**
-**[dist/aresos-vm-v0.3.3.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-vm-v0.3.3.zip)**
+**[dist/aresos-vm-v0.3.4.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-vm-v0.3.4.zip)**
 → распаковать → ВМ (Other 64-bit, 256 МБ, ✔EFI) → в «Носителях» к SATA прикрепить файл
 `aresos.vmdk` → Запустить. Никакой командной строки!
 
 **Реальное железо (флешка):**
-**[dist/aresos-usb-v0.3.3.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-usb-v0.3.3.zip)**
+**[dist/aresos-usb-v0.3.4.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-usb-v0.3.4.zip)**
 → `aresos.img` на флешку (balenaEtcher / Rufus DD) → Boot Menu → «UEFI: флешка».
 Пошагово: [docs/REALHARDWARE.md](docs/REALHARDWARE.md).
 
 **ISO для CD-привода (виртуалки):**
-**[dist/aresos-iso-v0.3.3.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-iso-v0.3.3.zip)**
+**[dist/aresos-iso-v0.3.4.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-iso-v0.3.4.zip)**
 → новая ВМ без жёсткого диска → прикрепить `aresos.iso` к CD-приводу → Запустить.
 
-> v0.3.3 — этап M3 закрыт: собственные таблицы страниц (identity + HHDM,
+> v0.3.4 — этап M3 закрыт: собственные таблицы страниц (identity + HHDM,
 > null-page guard, защита .text/RX и NX, CR0.WP), kernel-heap `kmalloc/kfree`
 > со стресс-тестом на миллион операций, и первый запуск настоящего .exe:
 > TESTPE.EXE (PE32+) разбирается PE-загрузчиком ядра по спецификации,
