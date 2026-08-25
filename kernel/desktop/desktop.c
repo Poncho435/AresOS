@@ -65,7 +65,7 @@ static void draw_panel(void) {
     gfx_fill_rect(0, PANEL_H - 2, g_scr_w, 2, COL_ACCENT);
     gfx_text_shadow(10, 11, "AresOS", COL_ACCENT, GFX_RGB(0, 0, 0));
     gfx_text(88, 11, "Desktop prototype", COL_PANEL_TXT);
-    gfx_text(g_scr_w - 96 - 8, 11, "v0.3.0", COL_PANEL_TXT);
+    gfx_text(g_scr_w - 96 - 8, 11, "v0.3.1", COL_PANEL_TXT);
 }
 
 static void draw_dock(void) {
@@ -136,7 +136,7 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
     mouse_set_limits(g_scr_w, g_scr_h);
 
     /* тексты окна */
-    strcpy_small(g_win.l1, "Kernel 0.3.0 (x86-64)");
+    strcpy_small(g_win.l1, "Kernel 0.3.1 (x86-64)");
     {
         char buf[48];
         char num[16];
@@ -245,6 +245,19 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
         }
 
         g_buttons_old = (uint8_t)left;
-        __asm__ volatile ("hlt");   /* спим до следующего IRQ */
+
+        /* v0.3.1: ДИАГНОСТИКА связки sti+hlt+первый IRQ на VBox/NEM —
+         * hlt убран: IRQ всегда застаёт код РАБОТАЮЩИМ, а не спящим.
+         * pause — мягкий спин; счётчик IRQ печатаем из ГЛАВНОГО контекста. */
+        {
+            static uint32_t last_irq = 0;
+            uint32_t c = mouse_irq_count();
+            if (c != last_irq) {
+                last_irq = c;
+                kprintf("[mouse] IRQ12 #%lu x=%ld y=%ld (кадр цел — десктоп жив)\n",
+                        c, (long)mouse_x(), (long)mouse_y());
+            }
+        }
+        __asm__ volatile ("pause");
     }
 }

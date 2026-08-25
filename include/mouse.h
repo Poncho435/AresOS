@@ -12,5 +12,6 @@ int32_t mouse_x(void);
 int32_t mouse_y(void);
 int     mouse_left(void);    /* левая кнопка нажата */
 int     mouse_moved(void);   /* был ли сдвиг с прошлого опроса (флаг сбрасывается) */
+uint32_t mouse_irq_count(void); /* сколько IRQ12 доставлено (диагностика) */
 
 #endif

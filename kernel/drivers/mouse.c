@@ -16,7 +16,7 @@ static volatile int     g_left;
 static volatile int     g_moved;
 static uint8_t  g_packet[3];
 static uint8_t  g_cycle;
-static uint32_t g_irq_count;   /* v0.2.5: диагностика — первые IRQ12 логируем */
+static volatile uint32_t g_irq_count;   /* v0.3.1: только счётчик — НЕ печатаем из IRQ! */
 
 /* ограничители — устанавливаются десктопом после инициализации графики */
 static int32_t g_max_x = 1024, g_max_y = 768;
@@ -75,9 +75,7 @@ void mouse_set_limits(uint32_t max_x, uint32_t max_y) {
 
 void mouse_irq_handler(void) {
     uint8_t b = inb(PS2_DATA);
-    g_irq_count++;
-    if (g_irq_count <= 5)
-        kprintf("[mouse] IRQ12 #%lu byte=%#x\n", g_irq_count, (unsigned)b);
+    g_irq_count++;   /* диагностику выводит десктоп из главного контекста */
     switch (g_cycle) {
     case 0:
         if (!(b & 0x08)) return;          /* синхронизация пакета: bit3 всегда 1 */
@@ -109,6 +107,7 @@ void mouse_irq_handler(void) {
 int32_t mouse_x(void) { return g_x; }
 int32_t mouse_y(void) { return g_y; }
 int     mouse_left(void) { return g_left; }
+uint32_t mouse_irq_count(void) { return g_irq_count; }
 int     mouse_moved(void) {
     int m = g_moved;
     g_moved = 0;
