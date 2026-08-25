@@ -70,16 +70,24 @@ void kfree(void *p) {
     if (b->free) kpanic("kfree: double free %p", p);
     b->free = 1;
     g_free_bytes += b->size;
-    /* coalesce: склеиваем с соседями (список хранится по возрастанию адресов) */
-    for (block_t *c = g_head; c && c->next; c = c->next) {
-        if (!c->free || !c->next->free) continue;
-        if ((uint8_t *)c + sizeof(block_t) + c->size == (uint8_t *)c->next) {
-            c->size += sizeof(block_t) + c->next->size;
-            c->next = c->next->next;
-            g_free_bytes += sizeof(block_t);
-            c = g_head;   /* по-простому: перезапускаемся */
+    /* coalesce: склеиваем все пары соседних свободных блоков (список по адресам).
+       v0.3.2: был баг — «перезапуск» через c=g_head в for-цикле ПРОПУСКАЛ пару
+       (head, head->next): инкремент цикла сразу перепрыгивал её. Теперь честные
+       полные проходы до стабилизации. */
+    int merged;
+    do {
+        merged = 0;
+        for (block_t *c = g_head; c && c->next; c = c->next) {
+            if (!c->free || !c->next->free) continue;
+            if ((uint8_t *)c + sizeof(block_t) + c->size == (uint8_t *)c->next) {
+                c->size += sizeof(block_t) + c->next->size;
+                c->next = c->next->next;
+                g_free_bytes += sizeof(block_t);
+                merged = 1;
+                break;
+            }
         }
-    }
+    } while (merged);
 }
 
 size_t heap_free_bytes(void) { return (size_t)g_free_bytes; }
@@ -93,8 +101,8 @@ static uint64_t rnd(void) {
 
 void heap_stress_test(void) {
     enum { SLOTS = 64, OPS = 1000000 };
-    static void *ptr[SLOTS];
-    static uint8_t sz[SLOTS];
+    static void    *ptr[SLOTS];
+    static uint16_t len[SLOTS];            /* v0.3.2: ПОЛНЫЙ размер (был баг: младший байт) */
     uint64_t live_blocks = 0, max_live = 0, allocs = 0, frees = 0;
 
     for (int op = 0; op < OPS; op++) {
@@ -103,16 +111,18 @@ void heap_stress_test(void) {
             size_t n = (size_t)(8 + rnd() % 1016);   /* 8..1023 байт */
             ptr[s] = kmalloc(n);
             if (!ptr[s]) continue;                   /* фрагментация — допустимо */
-            sz[s] = (uint8_t)(n & 0xFF);
-            memset(ptr[s], sz[s], n);                /* паттерн для проверки */
+            len[s] = (uint16_t)n;
+            memset(ptr[s], (int)(n & 0xFF), n);      /* паттерн для проверки */
             live_blocks++; allocs++;
             if (live_blocks > max_live) max_live = live_blocks;
         } else {
             uint8_t *q = ptr[s];
-            size_t n = (size_t)(8 + (size_t)sz[s] % 1016);
-            /* первый/последний байты паттерна — дёшево и ловит порчу */
-            if (q[0] != sz[s] || q[n - 1] != sz[s])
-                kpanic("heap stress: pattern broken @ %p (op %d)", q, op);
+            size_t n = (size_t)len[s];
+            uint8_t pat = (uint8_t)(n & 0xFF);
+            /* начало/середина/конец паттерна — ловит и перезапись, и Ctrl-C */
+            if (q[0] != pat || q[n / 2] != pat || q[n - 1] != pat)
+                kpanic("heap stress: pattern broken @ %p len=%lu pat=%#x (op %d)",
+                       q, (uint64_t)n, (unsigned)pat, op);
             kfree(ptr[s]);
             ptr[s] = NULL;
             live_blocks--; frees++;
@@ -121,9 +131,12 @@ void heap_stress_test(void) {
     for (int s = 0; s < SLOTS; s++)
         if (ptr[s]) { kfree(ptr[s]); ptr[s] = NULL; }
 
-    /* после полной очистки куча должна собраться в один блок */
+    /* после полной очистки куча должна собраться в один блок И ВЕРНУТЬ все байты */
     if (!(g_head && g_head->free && !g_head->next))
         kpanic("heap stress: Leak/fragment — арена не собралась обратно");
+    if (g_free_bytes != g_arena_size - sizeof(block_t))
+        kpanic("heap stress: accounting %lu != arena %lu - hdr %lu",
+               g_free_bytes, g_arena_size, (uint64_t)sizeof(block_t));
 
     kprintf("[heap] STRESS OK: 1,000,000 ops (allocs=%lu frees=%lu, peak live=%lu), leaks=0\n",
             allocs, frees, max_live);
