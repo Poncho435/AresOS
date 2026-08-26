@@ -7,7 +7,7 @@
 #include <string.h>
 
 #define MAX_PROC 32
-#define PROC_STACK 16384
+#define PROC_STACK 32768       /* 32 КиБ (v0.5.1: было 16 — pe_demo+kprintf глубокие) */
 #define HZ 100            /* таймер 100 Гц → тик 10 мс */
 #define TIMESLICE 4       /* 40 мс квант */
 

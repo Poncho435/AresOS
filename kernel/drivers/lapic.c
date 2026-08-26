@@ -66,26 +66,46 @@ int lapic_init(void) {
     lwr(L_TPR, 0);                   /* принимаем все приоритеты */
     lwr(L_LVT_LINT0, 0x10000);       /* LINT0/1 маскируем (NMI пока не нужны) */
     lwr(L_LVT_LINT1, 0x10000);
-
-    /* --- калибровка таймера по PIT --- */
     lwr(L_TMRDIV, 0x3);              /* делитель 16 */
-    lwr(L_LVT_TMR, TIMER_VECTOR);    /* one-shot пока */
-    lwr(L_TMRINIT, 0xFFFFFFFF);
-    uint32_t start = lrd(L_TMRCUR);
-    if (!pit_one_shot_50ms()) { kprintf("[lapic] PIT ch2 не ответил — откат на PIC\n"); return 0; }
-    uint32_t delta = start - lrd(L_TMRCUR);
-    lwr(L_TMRINIT, 0);
-    if (delta < 1000 || delta > 0xFFFFF000) {
-        kprintf("[lapic] калибровка странная (delta=%lu) — откат на PIC\n", (uint64_t)delta);
+    lwr(L_LVT_TMR, TIMER_VECTOR);    /* one-shot */
+
+    /* --- калибровка: ДВА замера по PIT ch2, должны совпасть ±5% ---
+     * v0.5.1: на части VM (VirtualBox/NEM) TMRCUR/гейт ведут себя странно и
+     * одиночный замер врал в сотни раз → таймер улетал на ~10 МГц. Лучше
+     * честный откат на PIT, чем варп-часы. */
+    uint32_t delta[2];
+    for (int t = 0; t < 2; t++) {
+        lwr(L_TMRINIT, 0xFFFFFFFF);
+        uint32_t start = lrd(L_TMRCUR);
+        if (!pit_one_shot_50ms()) { kprintf("[lapic] PIT ch2 не ответил — откат на PIC\n"); return 0; }
+        delta[t] = start - lrd(L_TMRCUR);
+        lwr(L_TMRINIT, 0);
+    }
+    lwr(L_LVT_TMR, 0x10000);         /* маскируем пока не уверены */
+
+    uint32_t d = delta[1];
+    uint32_t diff = delta[0] > delta[1] ? delta[0] - delta[1] : delta[1] - delta[0];
+    if (d < 20000 || d > 100000000u) {
+        kprintf("[lapic] замер вне диапазона (delta=%lu) — откат на PIC\n", (uint64_t)d);
         return 0;
     }
-    uint32_t per_10ms = delta / 5;   /* 50 мс → 10 мс (100 Гц) */
+    if (diff > d / 20) {
+        kprintf("[lapic] два замера разошлись (%lu vs %lu) — LAPIC таймеру"
+                " в этой VM верить нельзя, откат на PIC\n",
+                (uint64_t)delta[0], (uint64_t)delta[1]);
+        return 0;
+    }
+    uint32_t per_10ms = d / 5;       /* 50 мс → 10 мс (100 Гц) */
+    if (per_10ms < 4000) {           /* ~>25 МГц после ÷16 — чушь для bus clock */
+        kprintf("[lapic] per_10ms=%lu слишком мал — откат на PIC\n", (uint64_t)per_10ms);
+        return 0;
+    }
     lwr(L_LVT_TMR, TIMER_VECTOR | 0x20000);   /* periodic */
     lwr(L_TMRINIT, per_10ms);
 
     g_active = 1;
-    kprintf("[lapic] OK: таймер 100 Гц (50мс=%lu тиков, init=%lu), vector=0x40\n",
-            (uint64_t)delta, (uint64_t)per_10ms);
+    kprintf("[lapic] OK: таймер 100 Гц (замеры %lu/%lu, init=%lu), vector=0x40\n",
+            (uint64_t)delta[0], (uint64_t)delta[1], (uint64_t)per_10ms);
     return 1;
 }
 

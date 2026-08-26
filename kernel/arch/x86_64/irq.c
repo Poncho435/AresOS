@@ -18,9 +18,18 @@
 
 extern char __text_start[], __text_end[];
 
+/* куда может указывать rip в момент прерывания:
+ *  1) текст ядра [__text_start..__text_end)
+ *  2) область тестового PE-приложения 0x400000000.. (TESTPE.EXE исполняется
+ *     в ring0 — легальный кадр; v0.5.0 детектор ошибочно считал его мусором
+ *     и вешал систему прямо посреди PE-теста) */
+#define PE_CODE_LO 0x400000000ULL
+#define PE_CODE_HI 0x408000000ULL
+
 static int frame_sane(const regs_t *r) {
-    if (r->rip >= (uint64_t)__text_start && r->rip < (uint64_t)__text_end &&
-        r->cs == 0x08 && r->ss == 0x10 && (r->rflags & 2))
+    int rip_ok = (r->rip >= (uint64_t)__text_start && r->rip < (uint64_t)__text_end) ||
+                 (r->rip >= PE_CODE_LO && r->rip < PE_CODE_HI);
+    if (rip_ok && r->cs == 0x08 && r->ss == 0x10 && (r->rflags & 2))
         return 1;
     return 0;
 }

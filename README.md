@@ -29,20 +29,20 @@ make debug         # + GDB-stub на :1234, далее `make gdb`
 
 Требования: `gcc`, `make`, `python3`, `qemu-system-x86`, `ovmf` (подробности — [docs/SETUP.md](docs/SETUP.md)).
 
-## Запуск (v0.5.0 — современный UI, приложение «Логи», клавиатурная мышь)
+## Запуск (v0.5.1 — современный UI, логи-приложение, фиксы стабильности)
 
 **VirtualBox — самый простой путь:**
-**[dist/aresos-vm-v0.5.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-vm-v0.5.0.zip)**
+**[dist/aresos-vm-v0.5.1.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-vm-v0.5.1.zip)**
 → распаковать → ВМ (Other 64-bit, 256 МБ, ✔EFI) → в «Носителях» к SATA прикрепить файл
 `aresos.vmdk` → Запустить. Никакой командной строки!
 
 **Реальное железо (флешка):**
-**[dist/aresos-usb-v0.5.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-usb-v0.5.0.zip)**
+**[dist/aresos-usb-v0.5.1.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-usb-v0.5.1.zip)**
 → `aresos.img` на флешку (balenaEtcher / Rufus DD) → Boot Menu → «UEFI: флешка».
 Пошагово: [docs/REALHARDWARE.md](docs/REALHARDWARE.md).
 
 **ISO для CD-привода (виртуалки):**
-**[dist/aresos-iso-v0.5.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-iso-v0.5.0.zip)**
+**[dist/aresos-iso-v0.5.1.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-iso-v0.5.1.zip)**
 → новая ВМ без жёсткого диска → прикрепить `aresos.iso` к CD-приводу → Запустить.
 
 > **Управление на рабочем столе:** мышь (кликни в окно ВМ для захвата!),
@@ -50,7 +50,7 @@ make debug         # + GDB-stub на :1234, далее `make gdb`
 > **F3** — Логи; **Esc** закрывает верхнее окно; ↑/↓/PgUp/PgDn — прокрутка логов;
 > **Ctrl+стрелки** — движение курсора с клавиатуры (если мышь в ВМ застряла).
 >
-> v0.5.0 — новый тёмный интерфейс «midnight aurora»: плавающий док со
+> v0.5.1 — новый тёмный интерфейс «midnight aurora»: плавающий док со
 > значками, окна со z-порядком и перетаскиванием, скругления, часы в панели,
 > диспетчер задач с барами загрузки CPU, **все логи ядра перенесены в
 > отдельное приложение «Логи»** (цветной терминал, прокрутка), курсор

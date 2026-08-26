@@ -9,10 +9,19 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+static void emit(char c);
+
+/* v0.5.1: kprintf может зайти ПОВТОРНО из IRQ-контекста (например, детектор
+ * кадра внутри тика таймера посреди обычного kprintf). Побайтовое смешение
+ * ломало состояние UTF-8 в fb-консоли (мусор 'P''Q' на экране) и logbuf.
+ * Правило: вложенный вызов пишет ТОЛЬКО в serial — остальное не трогаем. */
+static volatile int g_print_depth;
+
 static void emit(char c) {
     serial_putc(c);
+    if (g_print_depth > 1) return;          /* вложенный (IRQ): только serial */
     if (fb_console_ready()) fb_console_putc(c);
-    logbuf_putc(c);   /* v0.5.0: журнал в память — показываем приложением «Логи» */
+    logbuf_putc(c);
 }
 
 static void emit_str(const char *s) {
@@ -39,6 +48,7 @@ static size_t strlen_min(const char *s) { size_t n = 0; while (s[n]) n++; return
 
 int kvprintf(const char *fmt, va_list ap) {
     int written = 0;
+    g_print_depth++;
     for (; *fmt; fmt++) {
         if (*fmt != '%') { emit(*fmt); written++; continue; }
         fmt++;
@@ -100,6 +110,7 @@ int kvprintf(const char *fmt, va_list ap) {
         for (int i = 0; i < len; i++) { emit(num[i]); written++; }
         if (left && pad > 0) { while (pad--) { emit(' '); written++; } }
     }
+    g_print_depth--;
     return written;
 }
 

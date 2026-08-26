@@ -144,7 +144,7 @@ static void panel_draw(void) {
     gfx_fill_rect(0, PANEL_H - 1, g_scr_w, 1, C_PLINE);
     gfx_text_bold(14, 13, "AresOS", C_ACCENT);
     gfx_fill_round_rect(86, 8, 62, 18, 6, GFX_RGB(0x1B, 0x20, 0x30));
-    gfx_text(94, 13, "v0.5.0", C_TXT2);
+    gfx_text(94, 13, "v0.5.1", C_TXT2);
     gfx_text(g_scr_w - 226, 13, "F1 About   F2 Tasks   F3 Logs", C_TXT2);
     clock_draw();
 }
@@ -262,7 +262,7 @@ static void about_draw(int32_t x, int32_t y, int32_t w) {
     (void)w;
     int32_t cx = x + 16;
     int32_t yy = y + 14;
-    gfx_text_bold(cx, yy, "AresOS kernel 0.5.0 (x86-64)", C_TXT); yy += 18;
+    gfx_text_bold(cx, yy, "AresOS kernel 0.5.1 (x86-64)", C_TXT); yy += 18;
     gfx_text(cx, yy, g_ram_line, C_TXT2); yy += 14;
     gfx_text(cx, yy, "IRQ model: IOAPIC+LAPIC 100 Hz (PIC fallback)", C_TXT2); yy += 14;
     gfx_text(cx, yy, "Heap/VMM alive, PE32+ loader inside kernel", C_TXT2); yy += 14;
@@ -515,6 +515,36 @@ static void world_draw(void) {
     clock_draw();
 }
 
+/* v0.5.1: частичный ремонт при перетаскивании — обновляем ТОЛЬКО область
+ * (старое∪новое положение окна + тень), а не весь мир → никакого мерцания */
+static void world_repair(int32_t rx, int32_t ry, int32_t rw, int32_t rh) {
+    if (rx < 0) rx = 0;
+    if (ry < 0) ry = 0;
+    if (rx + rw > (int32_t)g_scr_w) rw = (int32_t)g_scr_w - rx;
+    if (ry + rh > (int32_t)g_scr_h) rh = (int32_t)g_scr_h - ry;
+    if (rw <= 0 || rh <= 0) return;
+
+    gfx_blit_rows_region((uint32_t)rx, (uint32_t)ry, (uint32_t)rw, (uint32_t)rh, g_bg);
+
+    if (g_pe_ok) {   /* квадрат TESTPE.EXE */
+        int32_t gx = (int32_t)((g_scr_w * 3) / 4) - 32;
+        int32_t gy = (int32_t)((g_scr_h * 2) / 3) - 32;
+        if (rx < gx + 96 && rx + rw > gx && ry < gy + 96 && ry + rh > gy)
+            pe_ghost();
+    }
+    for (int i = 0; i < APP_N; i++) {           /* окна снизу вверх */
+        int a = g_z[i];
+        if (!g_w[a].open) continue;
+        if (g_w[a].x < rx + rw && g_w[a].x + g_w[a].w + 8 > rx &&
+            g_w[a].y < ry + rh && g_w[a].y + g_w[a].h + 8 > ry)
+            draw_window(a);
+    }
+    if (ry < PANEL_H) panel_draw();
+    if (ry + rh > (int32_t)(g_scr_h - DOCK_H - 16)) dock_draw();
+    if (ry + rh > (int32_t)(g_scr_h - 34) && rx + rw > (int32_t)(g_scr_w - 244))
+        pill_draw();
+}
+
 /* ---------------- вход и главный цикл ---------------- */
 __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
                                              uint64_t total_mib,
@@ -575,9 +605,12 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
     int btn_old = mouse_left();
     int drag_app = -1;
     int32_t drag_dx = 0, drag_dy = 0;
+    int rep_on = 0;
+    int32_t rep_rx = 0, rep_ry = 0, rep_rw = 0, rep_rh = 0;
 
     for (;;) {
         int need_world = 0, tm_dirty = 0, log_dirty = 0, aux_dirty = 0;
+        rep_on = 0;
 
         /* ===== клавиатура ===== */
         int k;
@@ -666,8 +699,14 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
                 if (nx < -W->w + 80) nx = -W->w + 80;
                 if (nx > (int32_t)g_scr_w - 80) nx = (int32_t)g_scr_w - 80;
                 if (nx != W->x || ny != W->y) {
+                    /* частичный ремонт: объединение старого/нового + тень */
+                    int32_t ox = W->x, oy = W->y;
                     W->x = nx; W->y = ny;
-                    need_world = 1;
+                    rep_rx = ox < nx ? ox : nx;
+                    rep_ry = oy < ny ? oy : ny;
+                    rep_rw = (ox > nx ? ox : nx) + W->w - rep_rx + 9;
+                    rep_rh = (oy > ny ? oy : ny) + W->h - rep_ry + 9;
+                    rep_on = 1;
                 }
             }
         }
@@ -705,15 +744,16 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
                     need_world = 1;
         }
 
-        if (need_world || tm_dirty || log_dirty || aux_dirty || moved) {
+        if (need_world || rep_on || tm_dirty || log_dirty || aux_dirty || moved) {
             cursor_hide();
             if (need_world) {
                 world_draw();
             } else {
+                if (rep_on)    world_repair(rep_rx, rep_ry, rep_rw, rep_rh);
                 if (tm_dirty)  draw_window(APP_TASKMAN);
                 if (log_dirty) draw_window(APP_LOGS);
                 if (aux_dirty) { clock_draw(); pill_draw(); }
-                if (moved)     pill_draw();
+                if (moved && !rep_on) pill_draw();
             }
             cursor_show(mouse_x(), mouse_y());
         }
