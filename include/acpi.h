@@ -1,4 +1,4 @@
-/* AresOS — ACPI (M4): поиск RSDP, разбор RSDT/XSDT → MADT("APIC").
+/* AresOS - ACPI (M4): поиск RSDP, разбор RSDT/XSDT -> MADT("APIC").
  * Нам нужны только: база LAPIC, база IOAPIC, BSP APIC ID, ремаппинги GSI. */
 #ifndef ARES_ACPI_H
 #define ARES_ACPI_H

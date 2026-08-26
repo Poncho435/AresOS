@@ -1,4 +1,4 @@
-/* AresOS — программирование legacy PIC 8259 (пока нет APIC; M4 заменит) */
+/* AresOS - программирование legacy PIC 8259 (пока нет APIC; M4 заменит) */
 #ifndef ARES_PIC_H
 #define ARES_PIC_H
 

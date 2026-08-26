@@ -1,10 +1,10 @@
 /*
- * AresOS — минимальные определения UEFI (по UEFI Specification 2.x),
+ * AresOS - минимальные определения UEFI (по UEFI Specification 2.x),
  * написаны вручную, без gnu-efi/EDK2: нам нужны только Boot Services,
  * текстовый вывод, GOP (графика) и чтение файлов.
  *
  * ВАЖНО: UEFI на x86-64 использует соглашение вызовов Microsoft x64,
- * а GCC по умолчанию — System V. Поэтому все протоколные функции
+ * а GCC по умолчанию - System V. Поэтому все протоколные функции
  * объявлены с EFIAPI = __attribute__((ms_abi)).
  */
 #ifndef ARES_UEFI_H
@@ -173,7 +173,7 @@ struct EFI_FILE_PROTOCOL {
     EFI_STATUS (EFIAPI *SetInfo)(EFI_FILE_PROTOCOL *This, const EFI_GUID *InformationType,
                                  UINTN BufferSize, const void *Buffer);
     EFI_STATUS (EFIAPI *Flush)(EFI_FILE_PROTOCOL *This);
-    /* revision 2+ (OpenEx...) — не используем */
+    /* revision 2+ (OpenEx...) - не используем */
     void *OpenEx;
     void *ReadEx;
     void *WriteEx;
@@ -203,7 +203,7 @@ typedef struct {
     EFI_STATUS (EFIAPI *Unload)(EFI_HANDLE ImageHandle);
 } EFI_LOADED_IMAGE_PROTOCOL;
 
-/* ---- Boot Services (порядок полей — по спецификации, он критичен!) ---- */
+/* ---- Boot Services (порядок полей - по спецификации, он критичен!) ---- */
 typedef struct {
     EFI_TABLE_HEADER Hdr;
     /* Task Priority */

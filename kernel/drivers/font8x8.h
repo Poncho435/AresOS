@@ -1,9 +1,9 @@
 /*
- * font8x8_basic — 8x8 моноширинный bitmap-шрифт (U+0000 – U+007F)
+ * font8x8_basic - 8x8 моноширинный bitmap-шрифт (U+0000 – U+007F)
  * Автор: Daniel Hepper <daniel@hepper.net>, на основе public-domain VGA-шрифтов IBM.
  * Лицензия: Public Domain (https://github.com/dhepper/font8x8)
  *
- * Формат: 8 байт на глиф, каждый байт — строка из 8 пикселей, LSB = самый левый пиксель.
+ * Формат: 8 байт на глиф, каждый байт - строка из 8 пикселей, LSB = самый левый пиксель.
  */
 #ifndef ARES_FONT8X8_H
 #define ARES_FONT8X8_H

@@ -1,8 +1,8 @@
-/* AresOS — IDT: таблица дескрипторов прерываний (Intel SDM vol.3, гл. 6).
- * v0.2.4: ВСЕ 256 векторов вооружены. 0..31 — диагностика исключений,
- * 32..47 — PIC IRQ через irq_dispatch, 48..255 — «тихий» iretq-стаб
+/* AresOS - IDT: таблица дескрипторов прерываний (Intel SDM vol.3, гл. 6).
+ * v0.2.4: ВСЕ 256 векторов вооружены. 0..31 - диагностика исключений,
+ * 32..47 - PIC IRQ через irq_dispatch, 48..255 - "тихий" iretq-стаб
  * (залётный LAPIC-таймер прошивки / MSI / мусор не уронит VM тройной
- * ошибкой: вектор за пределы idt.limit — это #GP→#DF→triple fault). */
+ * ошибкой: вектор за пределы idt.limit - это #GP->#DF->triple fault). */
 #include <stdint.h>
 
 typedef struct {
@@ -43,7 +43,7 @@ extern void irq41(void); extern void irq42(void); extern void irq43(void);
 extern void irq44(void); extern void irq45(void); extern void irq46(void);
 extern void irq47(void);
 
-/* «тихий» стаб для всех векторов 48..255 (idt_stubs.S) + таймер 0x40 */
+/* "тихий" стаб для всех векторов 48..255 (idt_stubs.S) + таймер 0x40 */
 extern void spurious_vector_stub(void);
 extern void irq64(void);
 
@@ -73,12 +73,12 @@ void idt_init(void) {
         idt_set(i, stub_table[i]);
     for (; i < IDT_ENTRIES; i++)
         idt_set(i, spurious_vector_stub);
-    idt_set(64, irq64);   /* 0x40: LAPIC-таймер → sched_tick (M4/M5) */
+    idt_set(64, irq64);   /* 0x40: LAPIC-таймер -> sched_tick (M4/M5) */
 
     struct { uint16_t limit; uint64_t base; } __attribute__((packed)) idtr = {
         .limit = sizeof(idt) - 1,
         .base  = (uint64_t)&idt,
     };
     __asm__ volatile ("lidt %0" :: "m"(idtr) : "memory");
-    /* sti НЕ делаем: пока нет обработчиков IRQ — включим на M4 */
+    /* sti НЕ делаем: пока нет обработчиков IRQ - включим на M4 */
 }

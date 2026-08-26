@@ -1,4 +1,4 @@
-/* AresOS mini-libc — freestanding string/memory functions */
+/* AresOS mini-libc - freestanding string/memory functions */
 #ifndef ARES_STRING_H
 #define ARES_STRING_H
 

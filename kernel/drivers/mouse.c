@@ -1,4 +1,4 @@
-/* AresOS — мышь PS/2 через контроллер 8042 (порты 0x60/0x64), IRQ12.
+/* AresOS - мышь PS/2 через контроллер 8042 (порты 0x60/0x64), IRQ12.
  * Пакет из 3 байт: [кнопки/знаки][dx][dy]. Курсор обновляется по прерываниям. */
 #include "mouse.h"
 #include "io.h"
@@ -16,9 +16,9 @@ static volatile int     g_left;
 static volatile int     g_moved;
 static uint8_t  g_packet[3];
 static uint8_t  g_cycle;
-static volatile uint32_t g_irq_count;   /* v0.3.1: только счётчик — НЕ печатаем из IRQ! */
+static volatile uint32_t g_irq_count;   /* v0.3.1: только счётчик - НЕ печатаем из IRQ! */
 
-/* ограничители — устанавливаются десктопом после инициализации графики */
+/* ограничители - устанавливаются десктопом после инициализации графики */
 static int32_t g_max_x = 1024, g_max_y = 768;
 
 static void ps2_wait_read(void) {
@@ -34,7 +34,7 @@ static void ps2_wait_write(void) {
 
 static int mouse_write(uint8_t cmd) {
     ps2_wait_write();
-    outb(PS2_CMD, 0xD4);          /* следующий байт — мыши */
+    outb(PS2_CMD, 0xD4);          /* следующий байт - мыши */
     ps2_wait_write();
     outb(PS2_DATA, cmd);
     ps2_wait_read();
@@ -88,7 +88,7 @@ void mouse_irq_handler(void) {
         int32_t dy = g_packet[2];
         if (g_packet[0] & 0x10) dx |= ~0xFF;   /* знак X */
         if (g_packet[0] & 0x20) dy |= ~0xFF;   /* знак Y */
-        /* переполнение координат — пакет мусорный */
+        /* переполнение координат - пакет мусорный */
         if (g_packet[0] & 0xC0) return;
 
         g_x += dx;

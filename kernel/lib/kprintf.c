@@ -1,4 +1,4 @@
-/* AresOS — kprintf: мини-printf ядра.
+/* AresOS - kprintf: мини-printf ядра.
  * Поддержка: %d %i %u %x %X %p %s %c %%, модификаторы l/ll, ширина с '0' и '-'.
  * Вывод дублируется: serial (всегда) + framebuffer-консоль (после её init). */
 #include "kprintf.h"
@@ -14,7 +14,7 @@ static void emit(char c);
 /* v0.5.1: kprintf может зайти ПОВТОРНО из IRQ-контекста (например, детектор
  * кадра внутри тика таймера посреди обычного kprintf). Побайтовое смешение
  * ломало состояние UTF-8 в fb-консоли (мусор 'P''Q' на экране) и logbuf.
- * Правило: вложенный вызов пишет ТОЛЬКО в serial — остальное не трогаем. */
+ * Правило: вложенный вызов пишет ТОЛЬКО в serial - остальное не трогаем. */
 static volatile int g_print_depth;
 
 static void emit(char c) {
@@ -57,7 +57,7 @@ int kvprintf(const char *fmt, va_list ap) {
         while (*fmt == '-' || *fmt == '0' || *fmt == '#') {
             if (*fmt == '-') left = true;
             else if (*fmt == '0') zero = true;
-            else alt = true;                 /* '#' — альтернативная форма (0x… для hex) */
+            else alt = true;                 /* '#' - альтернативная форма (0x... для hex) */
             fmt++;
         }
         while (*fmt >= '0' && *fmt <= '9') { width = width * 10 + (*fmt - '0'); fmt++; }
@@ -97,7 +97,7 @@ int kvprintf(const char *fmt, va_list ap) {
         case 's': str = va_arg(ap, const char *); if (!str) str = "(null)"; break;
         case 'c': ch = (char)va_arg(ap, int); break;
         case '%': ch = '%'; break;
-        default: ch = *fmt; break;  // неизвестный спецификатор — печатаем как есть
+        default: ch = *fmt; break;  // неизвестный спецификатор - печатаем как есть
         }
 
         if (str) { emit_str(str); written += (int)strlen_min(str); continue; }

@@ -1,7 +1,7 @@
-/* AresOS — kmain: главная функция ядра.
+/* AresOS - kmain: главная функция ядра.
  * Порядок инициализации:
- *   serial → GDT → IDT → FB-консоль → карта памяти → PMM → тест →
- *   PIC+мышь → рабочий стол (или halt, если нет графики). */
+ *   serial -> GDT -> IDT -> FB-консоль -> карта памяти -> PMM -> тест ->
+ *   PIC+мышь -> рабочий стол (или halt, если нет графики). */
 #include "bootinfo.h"
 #include "serial.h"
 #include "kprintf.h"
@@ -22,7 +22,7 @@
 extern void gdt_init(void);
 extern void idt_init(void);
 
-/* дескриптор UEFI — такой же layout, как в pmm.c */
+/* дескриптор UEFI - такой же layout, как в pmm.c */
 typedef struct {
     uint32_t type;
     uint32_t _pad;
@@ -62,7 +62,7 @@ static void print_memory_summary(const bootinfo_t *bi) {
     kprintf("[mem] usable RAM total: %lu MiB\n", usable >> 20);
 }
 
-#define KERNEL_VERSION "0.5.3"
+#define KERNEL_VERSION "0.5.4"
 
 /* ---- фоновые демоны M5 (диспетчер задач покажет их в списке) ---- */
 #include "gfx.h"
@@ -103,7 +103,7 @@ static void desktop_proc(void *arg) {
 }
 
 void kmain(bootinfo_t *bi) {
-    serial_init();   /* первым делом — канал отладки */
+    serial_init();   /* первым делом - канал отладки */
 
     kprintf("\n");
     kprintf("  ============================================\n");
@@ -112,18 +112,18 @@ void kmain(bootinfo_t *bi) {
     kprintf("  ============================================\n\n");
 
     if (!bi || bi->magic != BOOTINFO_MAGIC)
-        kpanic("bad bootinfo (ptr=%p) — loader/kernel ABI mismatch", (void *)bi);
+        kpanic("bad bootinfo (ptr=%p) - loader/kernel ABI mismatch", (void *)bi);
 
     gdt_init();
     kprintf("[gdt] GDT loaded (kcode=0x08, kdata=0x10)\n");
 
-    /* v0.2.4: IDT (все 256 векторов) — ДО первой записи в framebuffer.
+    /* v0.2.4: IDT (все 256 векторов) - ДО первой записи в framebuffer.
        Любой залётный вектор/исключение теперь ловится нашим обработчиком,
        а не улетает в висячий IDT прошивки или в triple fault. */
     idt_init();
     kprintf("[idt] IDT loaded: 256 vectors armed (exc + PIC IRQ + spurious-safe)\n");
 
-    /* M5 diag-маркер: ядро живо и прошло инициализацию IDT — циановая полоса. */
+    /* M5 diag-маркер: ядро живо и прошло инициализацию IDT - циановая полоса. */
     if (bi->fb.phys_base && bi->fb.format <= FB_FORMAT_BGR &&
         bi->fb.pitch && bi->fb.width && bi->fb.height > 128) {
         uint32_t v = (bi->fb.format == FB_FORMAT_RGB) ? 0x00C0C000u : 0x0000C0C0u;
@@ -167,7 +167,7 @@ void kmain(bootinfo_t *bi) {
     g_total_mib = (pmm_total_pages() * 4096ULL) >> 20;
 
     if (!fb_console_ready()) {
-        kprintf("\nAresOS init complete. No framebuffer — halting.\n");
+        kprintf("\nAresOS init complete. No framebuffer - halting.\n");
         for (;;) __asm__ volatile ("hlt");
     }
 
@@ -178,8 +178,8 @@ void kmain(bootinfo_t *bi) {
     if (lapic_ok) {
         ioapic_route_irq(1, 33);
         ioapic_route_irq(12, 44);
-        pic_set_mask(0xFF, 0xFF);              /* PIC уходит с поля — всё через LAPIC */
-        kprintf("[irq] model: IOAPIC → LAPIC (kbd=33, mouse=44), timer=LAPIC 100Hz\n");
+        pic_set_mask(0xFF, 0xFF);              /* PIC уходит с поля - всё через LAPIC */
+        kprintf("[irq] model: IOAPIC -> LAPIC (kbd=33, mouse=44), timer=LAPIC 100Hz\n");
     } else {
         /* PIT ch0 как системный тик 100 Гц + IRQ1 (клавиатура) + IRQ12 (мышь) */
         {
@@ -192,17 +192,17 @@ void kmain(bootinfo_t *bi) {
     mouse_init();
 
     /* ===== M5: планировщик + процессы ===== */
-    proc_init();                                       /* kmain → процесс "idle" */
+    proc_init();                                       /* kmain -> процесс "idle" */
     proc_spawn(heartbeat_proc, NULL, "heartbeat", PROC_F_BACKGROUND);
     proc_spawn(sysmon_proc,    NULL, "sysmon",    PROC_F_BACKGROUND);
     proc_spawn(desktop_proc,   NULL, "desktop",   0);
 
-    kprintf("\n[m5] scheduler ON: %s модель, тик 100 Гц — посмотри диспетчер (F2)!\n",
+    kprintf("\n[m5] scheduler ON: %s модель, тик 100 Гц - посмотри диспетчер (F2)!\n",
             lapic_ok ? "LAPIC" : "PIC");
 
     __asm__ volatile ("sti");
     for (;;) __asm__ volatile ("hlt");          /* idle-поток кmain: паркуемся */
 
-    kprintf("\nAresOS init complete. No framebuffer — halting.\n");
+    kprintf("\nAresOS init complete. No framebuffer - halting.\n");
     for (;;) __asm__ volatile ("hlt");
 }

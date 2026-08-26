@@ -1,9 +1,9 @@
-/* AresOS — рабочий стол v0.5.0: современная тёмная тема «midnight aurora».
- *  - кэшированные строки обоев → мгновенная перерисовка мира
- *  - верхняя панель со «стеклом», часы, хинты F1/F2/F3
+/* AresOS - рабочий стол v0.5.0: современная тёмная тема "midnight aurora".
+ *  - кэшированные строки обоев -> мгновенная перерисовка мира
+ *  - верхняя панель со "стеклом", часы, хинты F1/F2/F3
  *  - плавающий док: 3 значка-приложения, открываются мышкой и клавишами
  *  - окна со z-порядком: перетаскивание, raise по клику, красная точка закрытия
- *  - приложения: About (F1), Диспетчер задач (F2), Логи (F3) — журнал ядра
+ *  - приложения: About (F1), Диспетчер задач (F2), Логи (F3) - журнал ядра
  *  - курсор: save/restore, чёрный контур + белое тело; Ctrl+стрелки = клавиатурная мышь */
 #include "desktop.h"
 #include "gfx.h"
@@ -79,7 +79,7 @@ static int  contains(const char *s, const char *needle) {
 enum { APP_ABOUT = 0, APP_TASKMAN, APP_LOGS, APP_N };
 typedef struct { int open; int32_t x, y, w, h; } win_t;
 static win_t g_w[APP_N];
-static int   g_z[APP_N] = { 0, 1, 2 };     /* порядок отрисовки: [N-1] — верх */
+static int   g_z[APP_N] = { 0, 1, 2 };     /* порядок отрисовки: [N-1] - верх */
 
 static void app_raise(int a) {
     int pos = 0;
@@ -99,7 +99,7 @@ static void app_toggle(int a) {
 
 /* ---------------- обои ---------------- */
 static void bg_cache_build(void) {
-    /* вертикальный градиент BG0 → BG1 → BG2 */
+    /* вертикальный градиент BG0 -> BG1 -> BG2 */
     for (uint32_t y = 0; y < g_scr_h; y++) {
         uint32_t half = g_scr_h / 2;
         gfx_color_t c;
@@ -144,8 +144,8 @@ static void panel_draw(void) {
     gfx_fill_rect(0, PANEL_H - 1, g_scr_w, 1, C_PLINE);
     gfx_text_bold(14, 13, "AresOS", C_ACCENT);
     gfx_fill_round_rect(86, 8, 62, 18, 6, GFX_RGB(0x1B, 0x20, 0x30));
-    gfx_text(94, 13, "v0.5.3", C_TXT2);
-    /* кнопки-пускатели приложений — запуск значками (F-ключи остаются дублём) */
+    gfx_text(94, 13, "v0.5.4", C_TXT2);
+    /* кнопки-пускатели приложений - запуск значками (F-ключи остаются дублём) */
     static const char *BTN[APP_N] = { "О системе", "Задачи", "Логи" };
     static const gfx_color_t BC[APP_N] = {
         GFX_RGB(0x4A, 0x9D, 0xFF), GFX_RGB(0xFF, 0x9E, 0x49), GFX_RGB(0x4F, 0xC3, 0x7B),
@@ -204,7 +204,7 @@ static void dock_draw(void) {
         uint32_t ix = dx + 12 + (uint32_t)i * DOCK_STEP;
         uint32_t iy = dy + 7;
         gfx_color_t c = ICONS[i].col;
-        if (i == hov) {   /* лёгкое «подсвечивание» при наведении */
+        if (i == hov) {   /* лёгкое "подсвечивание" при наведении */
             c.r = (uint8_t)(c.r < 220 ? c.r + 35 : 255);
             c.g = (uint8_t)(c.g < 220 ? c.g + 35 : 255);
             c.b = (uint8_t)(c.b < 220 ? c.b + 35 : 255);
@@ -212,7 +212,7 @@ static void dock_draw(void) {
         gfx_fill_round_rect(ix, iy, DOCK_ICON, DOCK_ICON, 8, c);
         gfx_text_bold(ix + (DOCK_ICON - 8 * 2) / 2 + (ICONS[i].glyph[1] ? 0 : 4),
                       iy + DOCK_ICON / 2 - 4, ICONS[i].glyph, GFX_RGB(0xFF, 0xFF, 0xFF));
-        if (g_w[i].open)  /* точка «приложение открыто» */
+        if (g_w[i].open)  /* точка "приложение открыто" */
             gfx_fill_round_rect(ix + DOCK_ICON / 2 - 3, iy + DOCK_ICON + 2, 6, 3, 1, C_TXT2);
     }
 }
@@ -254,7 +254,7 @@ static void draw_content(int app, int32_t x, int32_t y, int32_t w, int32_t h);
 static const struct { const char *t; gfx_color_t c; } APP_META[APP_N] = {
     { "О системе AresOS",  GFX_RGB(0x4A, 0x9D, 0xFF) },
     { "Диспетчер задач",  GFX_RGB(0xFF, 0x9E, 0x49) },
-    { "Логи системы — терминал", GFX_RGB(0x4F, 0xC3, 0x7B) },
+    { "Логи системы - терминал", GFX_RGB(0x4F, 0xC3, 0x7B) },
 };
 
 static void draw_window(int app) {
@@ -271,7 +271,7 @@ static void draw_window(int app) {
     /* цветная точка приложения + заголовок */
     gfx_fill_round_rect(x + 12, y + 9, 12, 12, 3, APP_META[app].c);
     gfx_text_bold(x + 32, y + 11, APP_META[app].t, C_TXT);
-    /* «traffic lights»: красная = ЗАКРЫТЬ (с крестиком), серые — декор */
+    /* "traffic lights": красная = ЗАКРЫТЬ (с крестиком), серые - декор */
     int hovx = (mouse_x() >= x + w - 28 && mouse_x() < x + w - 8 &&
                 mouse_y() >= y + 6 && mouse_y() < y + 26);
     gfx_fill_round_rect(x + w - 25, y + 9, 12, 12, 3,
@@ -292,7 +292,7 @@ static void about_draw(int32_t x, int32_t y, int32_t w) {
     (void)w;
     int32_t cx = x + 16;
     int32_t yy = y + 14;
-    gfx_text_bold(cx, yy, "Ядро AresOS 0.5.3 (x86-64)", C_TXT); yy += 18;
+    gfx_text_bold(cx, yy, "Ядро AresOS 0.5.4 (x86-64)", C_TXT); yy += 18;
     gfx_text(cx, yy, g_ram_line, C_TXT2); yy += 14;
     gfx_text(cx, yy, "IRQ: IOAPIC+LAPIC 100 Гц (запасной PIC)", C_TXT2); yy += 14;
     gfx_text(cx, yy, "Куча/VMM живы, загрузчик PE32+ в ядре", C_TXT2); yy += 14;
@@ -301,9 +301,9 @@ static void about_draw(int32_t x, int32_t y, int32_t w) {
     gfx_fill_rect(cx, yy, 240, 1, C_PLINE); yy += 8;
     gfx_text(cx, yy, "Совет для ВМ: кликни в окно VirtualBox,", C_ACCENT); yy += 12;
     gfx_text(cx, yy, "чтобы захватить мышь! Полный экран (Host+F)", C_ACCENT); yy += 12;
-    gfx_text(cx, yy, "тоже помогает. Ctrl+стрелки — аварийная мышь.", C_ACCENT); yy += 14;
+    gfx_text(cx, yy, "тоже помогает. Ctrl+стрелки - аварийная мышь.", C_ACCENT); yy += 14;
     gfx_text(cx, yy, "Открыть: значки дока/панели или F1/F2/F3.", C_TXT2); yy += 12;
-    gfx_text(cx, yy, "Закрыть: красная ×, Esc или повторная клавиша.", C_TXT2);
+    gfx_text(cx, yy, "Закрыть: красная x, Esc или повторная клавиша.", C_TXT2);
 }
 
 /* ---- приложение Task Manager ---- */
@@ -458,7 +458,7 @@ static void logs_draw(int32_t x, int32_t y, int32_t w, int32_t h) {
     char *p = info;
     pcat(&p, "строк: ");
     u32dec((uint32_t)total, num); pcat(&p, num);
-    pcat(&p, g_log_scroll ? "  (Up/Down/PgUp/PgDn — листать)" : "  (прямой хвост)");
+    pcat(&p, g_log_scroll ? "  (Up/Down/PgUp/PgDn - листать)" : "  (прямой хвост)");
     gfx_text(cx + 4, y + 2, info, C_TXT2);
 }
 
@@ -511,7 +511,7 @@ static void cursor_show(int32_t x, int32_t y) {
         for (int32_t c = 0; c < 12; c++)
             if ((ARROW[r] >> c) & 1)
                 gfx_pixel((uint32_t)(x + c), (uint32_t)(y + r), GFX_RGB(0x00, 0x00, 0x00));
-    /* белое тело (та же маска со сдвигом +1,+1 → классическая заливка) */
+    /* белое тело (та же маска со сдвигом +1,+1 -> классическая заливка) */
     for (int32_t r = 0; r < 16; r++)
         for (int32_t c = 0; c < 11; c++)
             if ((ARROW[r] >> c) & 1)
@@ -520,7 +520,7 @@ static void cursor_show(int32_t x, int32_t y) {
 
 /* ---------------- PE-призрак: квадрат, который нарисовал TESTPE.EXE ----------------
  * EXE рисует однажды при старте; после перерисовок мира рисуем за него
- * тот же узор (персистентные поверхности приложений — это уже этап M6+). */
+ * тот же узор (персистентные поверхности приложений - это уже этап M6+). */
 static int g_pe_ok;
 static void pe_ghost(void) {
     if (!g_pe_ok) return;
@@ -546,8 +546,8 @@ static void world_draw(void) {
     clock_draw();
 }
 
-/* v0.5.1: частичный ремонт при перетаскивании — обновляем ТОЛЬКО область
- * (старое∪новое положение окна + тень), а не весь мир → никакого мерцания */
+/* v0.5.1: частичный ремонт при перетаскивании - обновляем ТОЛЬКО область
+ * (староеUновое положение окна + тень), а не весь мир -> никакого мерцания */
 static void world_repair(int32_t rx, int32_t ry, int32_t rw, int32_t rh) {
     if (rx < 0) rx = 0;
     if (ry < 0) ry = 0;
@@ -610,10 +610,11 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
     /* стартовое состояние: открыт About */
     g_w[APP_ABOUT].open = 1;
     app_raise(APP_ABOUT);
+    kprintf("[desktop] рисую стол: обои+панель+док %lux%lu...\n", g_scr_w, g_scr_h);
     world_draw();
-    kprintf("[desktop] %lux%lu modern UI up; F1/F2/F3 or dock clicks\n", g_scr_w, g_scr_h);
+    kprintf("[desktop] стол нарисован OK; дальше PE-тест и курсор\n");
 
-    /* PE-демо (M3): запускаем ПОСЛЕ первой отрисовки — квадрат рисует сам EXE */
+    /* PE-демо (M3): запускаем ПОСЛЕ первой отрисовки - квадрат рисует сам EXE */
     {
         int ret = pe_demo_run();
         char *p = g_pe_line;
@@ -652,7 +653,7 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
             case KEY_F1: app_toggle(APP_ABOUT);   need_world = 1; break;
             case KEY_F2: app_toggle(APP_TASKMAN); need_world = 1; break;
             case KEY_F3: app_toggle(APP_LOGS);    need_world = 1; break;
-            case 27: { int t = app_top();         /* Esc — закрыть верхнее */
+            case 27: { int t = app_top();         /* Esc - закрыть верхнее */
                 if (t >= 0) { g_w[t].open = 0; need_world = 1; }
                 break; }
             case KEY_UP:
@@ -687,7 +688,7 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
         if (pressed) {
             int32_t mx = mouse_x(), my = mouse_y();
             int hit = -1, topmost = -1;
-            /* сначала — кнопки панели (пускатели приложений) */
+            /* сначала - кнопки панели (пускатели приложений) */
             if ((hit = panel_hit(mx, my)) >= 0) {
                 app_toggle(hit);
                 need_world = 1;
@@ -708,7 +709,7 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
                 win_t *W = &g_w[topmost];
                 app_raise(topmost);
                 need_world = 1;
-                /* красная точка → закрыть */
+                /* красная точка -> закрыть */
                 if (mx >= W->x + W->w - 28 && mx < W->x + W->w - 8 &&
                     my >= W->y + 6 && my < W->y + 26) {
                     W->open = 0;
@@ -770,11 +771,11 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
         }
 
         /* ===== отрисовка одним батчем (курсор прячем на время) ===== */
-        /* окно можно перерисовать прямо только если оно ВЕРХНЕЕ —
-         * иначе зальёт чужие окна → тогда перерисовываем весь мир */
+        /* окно можно перерисовать прямо только если оно ВЕРХНЕЕ -
+         * иначе зальёт чужие окна -> тогда перерисовываем весь мир */
         if (tm_dirty && app_top() != APP_TASKMAN) need_world = 1;
         if (log_dirty && app_top() != APP_LOGS)   need_world = 1;
-        /* пилюля в углу может быть под окном → тоже через мир */
+        /* пилюля в углу может быть под окном -> тоже через мир */
         if ((moved || aux_dirty) && !need_world) {
             for (int i = 0; i < APP_N; i++)
                 if (g_w[i].open &&

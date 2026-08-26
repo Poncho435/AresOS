@@ -1,4 +1,4 @@
-/* AresOS — текстовая консоль поверх framebuffer (8x8 шрифт) */
+/* AresOS - текстовая консоль поверх framebuffer (8x8 шрифт) */
 #ifndef ARES_FB_CONSOLE_H
 #define ARES_FB_CONSOLE_H
 

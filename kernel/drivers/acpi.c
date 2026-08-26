@@ -1,4 +1,4 @@
-/* AresOS — ACPI discovery (M4). Ищем RSDP в BIOS-области 0xE0000..0x100000
+/* AresOS - ACPI discovery (M4). Ищем RSDP в BIOS-области 0xE0000..0x100000
  * (EBDA не трогаем: страница 0 под null-guard, стоять ей), без магии. */
 #include "acpi.h"
 #include "kprintf.h"
@@ -8,7 +8,7 @@ static uint64_t g_lapic, g_ioapic;
 static uint32_t g_bsp_id = 0xFFFFFFFF;
 static int      g_ok;
 
-/* overrides: type2 entries мапят ISA IRQ → GSI */
+/* overrides: type2 entries мапят ISA IRQ -> GSI */
 #define MAX_ISO 16
 static struct { uint32_t irq, gsi; uint16_t flags; } g_iso[MAX_ISO];
 static int g_iso_n;
@@ -20,7 +20,7 @@ static int csum(const void *p, uint32_t n) {
 }
 
 static void parse_madt(const uint8_t *t) {
-    /* MADT: 36B ACPI-header, +36 LAPIC base (4B), +40 flags (4B), +44 → entries */
+    /* MADT: 36B ACPI-header, +36 LAPIC base (4B), +40 flags (4B), +44 -> entries */
     g_lapic = (uint64_t)*(const uint32_t *)(t + 36);
     const uint8_t *e = t + 44;
     const uint8_t *end = t + *(const uint32_t *)(t + 4);
@@ -73,7 +73,7 @@ int acpi_init(uint64_t rsdp_hint) {
             if (rsdp_valid(p)) { rsdp = p; break; }
         }
     }
-    if (!rsdp) { kprintf("[acpi] RSDP не найден — остаёмся на legacy PIC\n"); return 0; }
+    if (!rsdp) { kprintf("[acpi] RSDP не найден - остаёмся на legacy PIC\n"); return 0; }
 
     const uint8_t *root = NULL; uint64_t nent = 0; int xsdt = 0;
     if (rsdp[15] >= 2) {
@@ -93,10 +93,10 @@ int acpi_init(uint64_t rsdp_hint) {
         const uint8_t *t = (const uint8_t *)(uintptr_t)addr;
         if (memcmp(t, "APIC", 4) == 0) { madt = t; break; }
     }
-    if (!madt) { kprintf("[acpi] MADT не найден — PIC-only путь\n"); return 0; }
+    if (!madt) { kprintf("[acpi] MADT не найден - PIC-only путь\n"); return 0; }
 
     parse_madt(madt);
-    if (!g_lapic || !g_ioapic) { kprintf("[acpi] MADT без LAPIC/IOAPIC — PIC-only\n"); return 0; }
+    if (!g_lapic || !g_ioapic) { kprintf("[acpi] MADT без LAPIC/IOAPIC - PIC-only\n"); return 0; }
 
     g_ok = 1;
     kprintf("[acpi] MADT: LAPIC @ %#lx, IOAPIC @ %#lx, BSP id=%lu, overrides=%d\n",

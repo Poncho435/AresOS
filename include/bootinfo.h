@@ -1,7 +1,7 @@
 /*
- * bootinfo — структура, которую UEFI-загрузчик передаёт ядру.
+ * bootinfo - структура, которую UEFI-загрузчик передаёт ядру.
  * Общий заголовок: используется и в boot/, и в kernel/.
- * Изменил поле — пересобери И загрузчик, И ядро.
+ * Изменил поле - пересобери И загрузчик, И ядро.
  */
 #ifndef ARES_BOOTINFO_H
 #define ARES_BOOTINFO_H
@@ -10,7 +10,7 @@
 
 #define BOOTINFO_MAGIC 0x415245534F533031ULL  /* "ARESOS01" */
 
-/* Пиксельные форматы — совпадают с EFI_GRAPHICS_PIXEL_FORMAT */
+/* Пиксельные форматы - совпадают с EFI_GRAPHICS_PIXEL_FORMAT */
 #define FB_FORMAT_RGB 0   /* PixelRedGreenBlueReserved8BitPerColor */
 #define FB_FORMAT_BGR 1   /* PixelBlueGreenRedReserved8BitPerColor  */
 

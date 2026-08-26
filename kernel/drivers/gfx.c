@@ -1,4 +1,4 @@
-/* AresOS — gfx: минимальная графическая библиотека ядра. */
+/* AresOS - gfx: минимальная графическая библиотека ядра. */
 #include "gfx.h"
 #include "fontex.h"
 #include <string.h>
@@ -7,8 +7,8 @@ static bootinfo_fb_t g_fb;
 static int g_ready;
 
 /* Упаковка цвета по UEFI-семантике байтов (little-endian u32):
- *   FB_FORMAT_RGB = PixelRedGreenBlue: байт0=R → u32 = R | G<<8 | B<<16
- *   FB_FORMAT_BGR = PixelBlueGreenRed: байт0=B → u32 = B | G<<8 | R<<16 */
+ *   FB_FORMAT_RGB = PixelRedGreenBlue: байт0=R -> u32 = R | G<<8 | B<<16
+ *   FB_FORMAT_BGR = PixelBlueGreenRed: байт0=B -> u32 = B | G<<8 | R<<16 */
 static uint32_t pack(gfx_color_t c) {
     if (g_fb.format == FB_FORMAT_RGB)
         return ((uint32_t)c.b << 16) | ((uint32_t)c.g << 8) | c.r;
@@ -104,7 +104,7 @@ void gfx_text_shadow(uint32_t x, uint32_t y, const char *s, gfx_color_t fg, gfx_
     gfx_text(x, y, s, fg);
 }
 
-/* v0.5.0: «жирный» текст — два прохода со сдвигом на 1px */
+/* v0.5.0: "жирный" текст - два прохода со сдвигом на 1px */
 void gfx_text_bold(uint32_t x, uint32_t y, const char *s, gfx_color_t fg) {
     gfx_text(x, y, s, fg);
     gfx_text(x + 1, y, s, fg);
@@ -112,7 +112,7 @@ void gfx_text_bold(uint32_t x, uint32_t y, const char *s, gfx_color_t fg) {
 
 uint32_t gfx_pack(gfx_color_t c) { return pack(c); }
 
-/* обои из кэша: весь экран / прямоугольник — прямые записи packed-пикселей */
+/* обои из кэша: весь экран / прямоугольник - прямые записи packed-пикселей */
 void gfx_blit_rows_region(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
                            const uint32_t *rowpx) {
     if (!g_ready) return;

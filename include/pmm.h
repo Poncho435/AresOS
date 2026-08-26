@@ -1,4 +1,4 @@
-/* AresOS — PMM: менеджер физических страниц 4 КиБ (bitmap) */
+/* AresOS - PMM: менеджер физических страниц 4 КиБ (bitmap) */
 #ifndef ARES_PMM_H
 #define ARES_PMM_H
 

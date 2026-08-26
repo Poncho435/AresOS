@@ -1,4 +1,4 @@
-/* AresOS — port I/O (x86-64) */
+/* AresOS - port I/O (x86-64) */
 #ifndef ARES_IO_H
 #define ARES_IO_H
 

@@ -1,4 +1,4 @@
-/* AresOS — драйвер мыши PS/2 (IRQ12) */
+/* AresOS - драйвер мыши PS/2 (IRQ12) */
 #ifndef ARES_MOUSE_H
 #define ARES_MOUSE_H
 

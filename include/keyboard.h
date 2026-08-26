@@ -1,4 +1,4 @@
-/* AresOS — клавиатура PS/2 (M4): IRQ1, scancode set 1 → ASCII, F1..F12. */
+/* AresOS - клавиатура PS/2 (M4): IRQ1, scancode set 1 -> ASCII, F1..F12. */
 #ifndef ARES_KEYBOARD_H
 #define ARES_KEYBOARD_H
 

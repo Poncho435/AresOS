@@ -1,7 +1,7 @@
-/* AresOS — VMM (M3): собственные таблицы страниц.
+/* AresOS - VMM (M3): собственные таблицы страниц.
  * После vmm_init прошивочные таблицы больше не используются:
- *   PML4[0]   → identity 0..4 ГиБ (2 МиБ, кроме зоны ядра и страницы 0)
- *   PML4[256] → тот же PDPT: HHDM 0xFFFF800000000000 + phys
+ *   PML4[0]   -> identity 0..4 ГиБ (2 МиБ, кроме зоны ядра и страницы 0)
+ *   PML4[256] -> тот же PDPT: HHDM 0xFFFF800000000000 + phys
  * Зона ядра [0x200000..0x400000) мапится постранично с защитой секций. */
 #include "vmm.h"
 #include "pmm.h"
@@ -43,7 +43,7 @@ static inline void wrmsr(uint32_t msr, uint64_t v) {
     __asm__ volatile ("wrmsr" :: "c"(msr), "a"((uint32_t)v), "d"((uint32_t)(v >> 32)) : "memory");
 }
 
-/* во время постройки таблиц действует identity — физ. адрес = вирт. адрес */
+/* во время постройки таблиц действует identity - физ. адрес = вирт. адрес */
 static uint64_t *new_table(void) {
     uint64_t p = pmm_alloc_page();
     if (!p) kpanic("vmm: out of pages for page tables");
@@ -68,7 +68,7 @@ void vmm_map_4k(uint64_t virt, uint64_t phys, uint64_t flags) {
     uint64_t *pdpt = next_level(g_pml4, i4, 0);
     uint64_t *pd   = next_level(pdpt, i3, 0);
     if (pd[i2] & PTE_PS)
-        kpanic("vmm: 4K map inside 2MiB page %#lx — реализуй split позже", virt);
+        kpanic("vmm: 4K map inside 2MiB page %#lx - реализуй split позже", virt);
     uint64_t *pt   = next_level(pd, i2, 0);
     pt[i1] = (phys & PTE_ADDR) | flags;
     invlpg(virt);
@@ -120,14 +120,14 @@ void vmm_init(const bootinfo_t *bi) {
         }
     }
 
-    /* HHDM: тот же PDPT под PML4[256] → физ. 0..4 ГиБ видны и там */
+    /* HHDM: тот же PDPT под PML4[256] -> физ. 0..4 ГиБ видны и там */
     g_pml4[(VMM_HHDM_BASE >> 39) & 0x1FF] = ((uint64_t)(uintptr_t)pdpt) | PTE_P | PTE_W;
     kprintf("[vmm] HHDM: phys 0..4 GiB дублируется на %#lx\n", (uint64_t)VMM_HHDM_BASE);
 
     /* ---- страница 0: НЕ замаплена (null-pointer guard) ---- */
     uint64_t *pt_lo = new_table();          /* PT для самых первых 2 МиБ */
     pd[0][0] = ((uint64_t)(uintptr_t)pt_lo) | PTE_P | PTE_W;   /* сбрасывает PS */
-    for (int i = 1; i < 512; i++)           /* i=0 пропускаем: null → #PF */
+    for (int i = 1; i < 512; i++)           /* i=0 пропускаем: null -> #PF */
         pt_lo[i] = ((uint64_t)i << 12) | PTE_P | PTE_W | PTE_NX;
 
     /* ---- зона ядра 0x200000..0x400000 постранично ---- */

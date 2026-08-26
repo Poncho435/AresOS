@@ -1,4 +1,4 @@
-/* AresOS — форматированный вывод ядра (serial + консоль framebuffer) */
+/* AresOS - форматированный вывод ядра (serial + консоль framebuffer) */
 #ifndef ARES_KPRINTF_H
 #define ARES_KPRINTF_H
 

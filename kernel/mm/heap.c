@@ -1,4 +1,4 @@
-/* AresOS — kernel heap (M3): K&R-аллокатор поверх VMM-арены. */
+/* AresOS - kernel heap (M3): K&R-аллокатор поверх VMM-арены. */
 #include "heap.h"
 #include "vmm.h"
 #include "pmm.h"
@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#define HEAP_VA     0x500000000ULL          /* 20 ГиБ — вне identity-зон и HHDM-RAM */
+#define HEAP_VA     0x500000000ULL          /* 20 ГиБ - вне identity-зон и HHDM-RAM */
 #define HEAP_PAGES  512                     /* 2 МиБ арены */
 #define BLOCK_MAGIC 0xB10CB10CB10CB10CULL
 #define ALIGN16(n) (((n) + 15) & ~15ULL)
@@ -23,7 +23,7 @@ static uint64_t  g_arena_size = (uint64_t)HEAP_PAGES * PMM_PAGE_SIZE;
 static uint64_t  g_free_bytes;
 
 void heap_init(void) {
-    /* арена: 512 произвольных физ. страниц → непрерывные VA через VMM */
+    /* арена: 512 произвольных физ. страниц -> непрерывные VA через VMM */
     for (uint64_t i = 0; i < HEAP_PAGES; i++) {
         uint64_t phys = pmm_alloc_page();
         if (!phys) kpanic("heap: out of pages for arena");
@@ -60,7 +60,7 @@ void *kmalloc(size_t n) {
         g_free_bytes -= b->size;
         return (uint8_t *)b + sizeof(block_t);
     }
-    return NULL;   /* не хватило — NULL, паника только при порче структур */
+    return NULL;   /* не хватило - NULL, паника только при порче структур */
 }
 
 void kfree(void *p) {
@@ -71,7 +71,7 @@ void kfree(void *p) {
     b->free = 1;
     g_free_bytes += b->size;
     /* coalesce: склеиваем все пары соседних свободных блоков (список по адресам).
-       v0.3.2: был баг — «перезапуск» через c=g_head в for-цикле ПРОПУСКАЛ пару
+       v0.3.2: был баг - "перезапуск" через c=g_head в for-цикле ПРОПУСКАЛ пару
        (head, head->next): инкремент цикла сразу перепрыгивал её. Теперь честные
        полные проходы до стабилизации. */
     int merged;
@@ -110,7 +110,7 @@ void heap_stress_test(void) {
         if (!ptr[s]) {
             size_t n = (size_t)(8 + rnd() % 1016);   /* 8..1023 байт */
             ptr[s] = kmalloc(n);
-            if (!ptr[s]) continue;                   /* фрагментация — допустимо */
+            if (!ptr[s]) continue;                   /* фрагментация - допустимо */
             len[s] = (uint16_t)n;
             memset(ptr[s], (int)(n & 0xFF), n);      /* паттерн для проверки */
             live_blocks++; allocs++;
@@ -119,7 +119,7 @@ void heap_stress_test(void) {
             uint8_t *q = ptr[s];
             size_t n = (size_t)len[s];
             uint8_t pat = (uint8_t)(n & 0xFF);
-            /* начало/середина/конец паттерна — ловит и перезапись, и Ctrl-C */
+            /* начало/середина/конец паттерна - ловит и перезапись, и Ctrl-C */
             if (q[0] != pat || q[n / 2] != pat || q[n - 1] != pat)
                 kpanic("heap stress: pattern broken @ %p len=%lu pat=%#x (op %d)",
                        q, (uint64_t)n, (unsigned)pat, op);
@@ -133,7 +133,7 @@ void heap_stress_test(void) {
 
     /* после полной очистки куча должна собраться в один блок И ВЕРНУТЬ все байты */
     if (!(g_head && g_head->free && !g_head->next))
-        kpanic("heap stress: Leak/fragment — арена не собралась обратно");
+        kpanic("heap stress: Leak/fragment - арена не собралась обратно");
     if (g_free_bytes != g_arena_size - sizeof(block_t))
         kpanic("heap stress: accounting %lu != arena %lu - hdr %lu",
                g_free_bytes, g_arena_size, (uint64_t)sizeof(block_t));

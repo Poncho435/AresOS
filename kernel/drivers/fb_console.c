@@ -1,4 +1,4 @@
-/* AresOS — текстовая консоль поверх линейного framebuffer от GOP.
+/* AresOS - текстовая консоль поверх линейного framebuffer от GOP.
  * Шрифт 8x8, скролл переносом памяти. Цвета: светло-серый по тёмно-синему. */
 #include "fb_console.h"
 #include "fontex.h"
@@ -21,8 +21,8 @@ static uint32_t g_cur_x, g_cur_y;
 static uint32_t g_fg, g_bg;
 
 static uint32_t make_pixel(uint8_t r, uint8_t g, uint8_t b) {
-    /* UEFI-семантика байтов: RGB → байт0=R (u32 = R|G<<8|B<<16);
-     * BGR → байт0=B (u32 = B|G<<8|R<<16). */
+    /* UEFI-семантика байтов: RGB -> байт0=R (u32 = R|G<<8|B<<16);
+     * BGR -> байт0=B (u32 = B|G<<8|R<<16). */
     if (g_fb.format == FB_FORMAT_RGB)
         return ((uint32_t)b << 16) | ((uint32_t)g << 8) | r;
     return ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
@@ -41,7 +41,7 @@ static void fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t c
 }
 
 void fb_console_init(const bootinfo_fb_t *fb) {
-    if (!fb || !fb->phys_base) return;  // нет графики — остаётся serial
+    if (!fb || !fb->phys_base) return;  // нет графики - остаётся serial
     /* защита от нулевой/мусорной геометрии (иначе scroll в бесконечность) */
     if (fb->width < GLYPH_W * 2 || fb->height < GLYPH_H * 4 || !fb->pitch) {
         return;
@@ -104,7 +104,7 @@ void fb_console_putc(char c) {
         return;
     }
     int slot = fontex_slot(&g_utf, (uint8_t)c);
-    if (slot < 0) return;                  /* половина UTF-8 — ждём второй байт */
+    if (slot < 0) return;                  /* половина UTF-8 - ждём второй байт */
     draw_glyph_slot(slot, g_cur_x, g_cur_y);
     if (++g_cur_x >= g_cols) newline();
 }

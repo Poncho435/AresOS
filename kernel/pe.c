@@ -1,12 +1,12 @@
-/* AresOS — PE32+ loader (v0, по спецификации PE/COFF).
+/* AresOS - PE32+ loader (v0, по спецификации PE/COFF).
  * Что делает:
  *   1. Проверяет MZ/PE/COFF/Optional PE32+ (machine AMD64, subsystem логируется).
- *   2. Считает импорты: DATA DIR[1] — если непусто, отклоняет (резолвер = M8).
+ *   2. Считает импорты: DATA DIR[1] - если непусто, отклоняет (резолвер = M8).
  *   3. Выделяет физ. страницы через PMM, мапит их на ImageBase через VMM,
  *      копирует заголовки и секции по RVA (SectionAlignment).
- *   4. Права страниц — из IMAGE_SCN_MEM_*: EXECUTE → RX, WRITE → RW+NX.
- *   5. Если база занята и есть .reloc — применяет DIR64-релоки на дельту.
- *   6. Вызывает точку входа (CAVEAT: SysV-ABI — осознанное упрощение этапа).
+ *   4. Права страниц - из IMAGE_SCN_MEM_*: EXECUTE -> RX, WRITE -> RW+NX.
+ *   5. Если база занята и есть .reloc - применяет DIR64-релоки на дельту.
+ *   6. Вызывает точку входа (CAVEAT: SysV-ABI - осознанное упрощение этапа).
  *
  * Файл сейчас вшит в ядро (ld -b binary): ФС у нас ещё нет (это M6). */
 #include "pe.h"
@@ -82,7 +82,7 @@ int pe_demo_run(void) {
             (uint64_t)ep, ibase, (uint64_t)(soi >> 10), (unsigned)nsec, (unsigned)subsys);
 
     if (imp_rva || imp_sz) {
-        kprintf("[pe] импорты есть (%lu байт) — резолвер это M8, пока отклоняем\n",
+        kprintf("[pe] импорты есть (%lu байт) - резолвер это M8, пока отклоняем\n",
                 (uint64_t)imp_sz);
         return -17;
     }
@@ -107,7 +107,7 @@ int pe_demo_run(void) {
         uint32_t sch = rd32(sh + 36);
         if (va + vsz > soi || rptr + raw > n) { kprintf("[pe] секция %u за границами\n", s); return -20; }
         memcpy(img + va, f + rptr, raw < vsz ? raw : vsz);
-        /* права страниц секции — по IMAGE_SCN_MEM_* (физ. адрес сохраняется) */
+        /* права страниц секции - по IMAGE_SCN_MEM_* (физ. адрес сохраняется) */
         uint64_t fl = (sch & SCN_MEM_EXECUTE)
                     ? VMM_P                                   /* RX */
                     : (VMM_P | VMM_NX | ((sch & SCN_MEM_WRITE) ? VMM_W : 0));
@@ -115,7 +115,7 @@ int pe_demo_run(void) {
             vmm_protect_4k(ibase + a, fl);
     }
 
-    /* --- базовые релоки: грузимся по своему ImageBase → дельта 0, но код есть --- */
+    /* --- базовые релоки: грузимся по своему ImageBase -> дельта 0, но код есть --- */
     uint64_t applied = 0;
     if (rel_rva && rel_sz) {
         const uint8_t *r = f + rel_rva, *end = r + rel_sz;
@@ -125,7 +125,7 @@ int pe_demo_run(void) {
             for (const uint8_t *e = r + 8; e + 2 <= r + blk_sz; e += 2) {
                 uint16_t ent = rd16(e);
                 if ((ent >> 12) == RELOC_DIR64)
-                    applied++;   /* дельта=0 — применять нечего, но посчитаем */
+                    applied++;   /* дельта=0 - применять нечего, но посчитаем */
                 else if ((ent >> 12) != 0)
                     kprintf("[pe] reloc type %u пока не поддержан\n", (unsigned)(ent >> 12));
             }
@@ -133,11 +133,11 @@ int pe_demo_run(void) {
             r += blk_sz;
         }
     }
-    kprintf("[pe] импортов=0, DIR64-релок (дельта 0)=%lu → вызов entry...\n", applied);
+    kprintf("[pe] импортов=0, DIR64-релок (дельта 0)=%lu -> вызов entry...\n", applied);
 
     pe_entry_t entry = (pe_entry_t)(uintptr_t)(ibase + ep);
     int ret = entry(&g_api);   /* SysV: ctx в RDI (намеренно; MS-ABI будет на M8) */
     kprintf("[pe] TESTPE.EXE вернул %d (%#lx)%s\n", ret, (uint64_t)(uint32_t)ret,
-            (uint32_t)ret == ARES_PE_TEST_OK ? " — PE 32+ ЗАПУЩЕН ✔" : "");
+            (uint32_t)ret == ARES_PE_TEST_OK ? " - PE 32+ ЗАПУЩЕН OK" : "");
     return ret;
 }

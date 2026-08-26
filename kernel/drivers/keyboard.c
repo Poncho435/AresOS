@@ -1,4 +1,4 @@
-/* AresOS — клавиатура PS/2 (M4). Сканкоды set 1 → ASCII (EN раскладка,
+/* AresOS - клавиатура PS/2 (M4). Сканкоды set 1 -> ASCII (EN раскладка,
  * Shift/CapsLock/NumPad-стрелки E0). Ring-буфер на 64 события. */
 #include "keyboard.h"
 #include "io.h"
@@ -41,7 +41,7 @@ static void push(uint16_t code) {
 
 void keyboard_init(void) {
     g_head = g_tail = 0; g_shift = g_caps = 0; g_e0 = 0;
-    kprintf("[kbd] PS/2 keyboard: IRQ1, set-1 → ASCII ring[64]\n");
+    kprintf("[kbd] PS/2 keyboard: IRQ1, set-1 -> ASCII ring[64]\n");
 }
 
 void keyboard_irq_handler(void) {

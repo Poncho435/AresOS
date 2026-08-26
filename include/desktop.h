@@ -1,4 +1,4 @@
-/* AresOS — прототип рабочего стола (M2.5-bonus): обои, панель, окно, мышь */
+/* AresOS - прототип рабочего стола (M2.5-bonus): обои, панель, окно, мышь */
 #ifndef ARES_DESKTOP_H
 #define ARES_DESKTOP_H
 

@@ -1,7 +1,7 @@
-/* AresOS — PMM: битовая карта физических страниц 4 КиБ.
- * Источник данных — карта памяти UEFI (через bootinfo).
- * Бит = 1 → страница занята/зарезервирована, бит = 0 → свободна.
- * Линейный поиск — пока достаточно; buddy-аллокатор придёт на M3+ вместе с VMM. */
+/* AresOS - PMM: битовая карта физических страниц 4 КиБ.
+ * Источник данных - карта памяти UEFI (через bootinfo).
+ * Бит = 1 -> страница занята/зарезервирована, бит = 0 -> свободна.
+ * Линейный поиск - пока достаточно; buddy-аллокатор придёт на M3+ вместе с VMM. */
 #include "pmm.h"
 #include "kprintf.h"
 #include <string.h>
@@ -17,7 +17,7 @@ typedef struct {
 } efi_mem_desc_t;
 
 #define EFI_CONVENTIONAL_MEMORY 7   /* свободная ОЗУ */
-#define LOW_MEM_LIMIT  0x100000ULL  /* всё ниже 1 МиБ — резерв (BIOS-наследие) */
+#define LOW_MEM_LIMIT  0x100000ULL  /* всё ниже 1 МиБ - резерв (BIOS-наследие) */
 
 extern char __kernel_start[], __kernel_end[];  /* символы из linker.ld */
 
@@ -35,7 +35,7 @@ static uint64_t align_up(uint64_t v, uint64_t a) { return (v + a - 1) & ~(a - 1)
 void pmm_init(const bootinfo_t *bi) {
     const uint8_t *end = (const uint8_t *)(uintptr_t)bi->mmap_phys + bi->mmap_size;
 
-    /* 1. верхняя граница ОЗУ — по обычной (conventional) памяти */
+    /* 1. верхняя граница ОЗУ - по обычной (conventional) памяти */
     uint64_t top = 0;
     for (const uint8_t *p = (const uint8_t *)(uintptr_t)bi->mmap_phys; p < end; p += bi->mmap_desc_size) {
         const efi_mem_desc_t *d = (const efi_mem_desc_t *)p;
@@ -46,7 +46,7 @@ void pmm_init(const bootinfo_t *bi) {
     g_total_pages = top >> 12;
     uint64_t bitmap_bytes = align_up(g_total_pages / 8 + 1, PMM_PAGE_SIZE);
 
-    /* 2. битмап размещаем сразу за ядром — там точно есть физпамять,
+    /* 2. битмап размещаем сразу за ядром - там точно есть физпамять,
           потому что загрузчик положил ядро в conventional-регион */
     g_bitmap = (uint8_t *)(uintptr_t)align_up((uint64_t)__kernel_end, PMM_PAGE_SIZE);
 

@@ -1,5 +1,5 @@
 /*
- * AresOS — UEFI-загрузчик (BOOTX64.EFI).
+ * AresOS - UEFI-загрузчик (BOOTX64.EFI).
  *
  * Что делает:
  *   1. Инициализирует debug-вывод (ConOut на экран + COM1 в терминал).
@@ -11,7 +11,7 @@
  *      и прыгает на точку входа ядра, передавая bootinfo_t*.
  *
  * Собирается как static-PIE ELF, затем tools/elf2efi.py конвертирует
- * в PE32+ (EFI Application) — см. Makefile.
+ * в PE32+ (EFI Application) - см. Makefile.
  */
 #include "uefi.h"
 #include "bootinfo.h"
@@ -40,7 +40,7 @@ static const EFI_GUID gSimpleFsGuid = EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID;
 static const EFI_GUID gFileInfoGuid =
     { 0x09576E92, 0x6D3F, 0x11D2, { 0x8E, 0x39, 0x00, 0xA0, 0xC9, 0x69, 0x72, 0x3B } };
 
-/* diag-полосы (определение — ниже, перед efi_main) */
+/* diag-полосы (определение - ниже, перед efi_main) */
 static void diag_band(uint32_t y0, uint32_t y1, uint8_t r, uint8_t g, uint8_t b);
 
 /* ===================== debug-вывод: COM1 + экран ===================== */
@@ -114,9 +114,9 @@ typedef struct {
 
 /* ===================== ядро, вшитое прямо в BOOTX64.EFI (v0.2.4) =====================
  * Makefile влинковывает build/kernel.elf в загрузчик как бинарный объект
- * (ld -r -b binary) → символы ниже. Так мы получаем файл ядра БЕЗ единого
+ * (ld -r -b binary) -> символы ниже. Так мы получаем файл ядра БЕЗ единого
  * обращения к FAT/SimpleFileSystem: прошивка VBox подала признаки нестабиль-
- * ности ровно в fs->OpenVolume() на El Torito FAT12 — обходим этот путь совсем. */
+ * ности ровно в fs->OpenVolume() на El Torito FAT12 - обходим этот путь совсем. */
 extern const uint8_t _binary_kernel_elf_start[];
 extern const uint8_t _binary_kernel_elf_end[];
 
@@ -168,12 +168,12 @@ static EFI_STATUS read_kernel_file(uint8_t **out_buf, UINTN *out_size) {
     diag_band(16, 24, 0xE0, 0xE0, 0x00);          /* R3 */
 
     st = root->Open(root, &file, u"KERNEL.ELF", EFI_FILE_MODE_READ, 0);
-    if (EFI_ERROR(st)) { log_line("[boot] FAIL: open KERNEL.ELF — файла нет на ESP"); return st; }
+    if (EFI_ERROR(st)) { log_line("[boot] FAIL: open KERNEL.ELF - файла нет на ESP"); return st; }
     serial_str("[fs] KERNEL.ELF open ok\n");
     diag_band(24, 32, 0x80, 0xE0, 0x00);          /* R4 */
 
     /* размер файла: СНАЧАЛА канонический GetInfo (EFI_FILE_INFO),
-       а трюк SetPosition(end) — только как запасной вариант */
+       а трюк SetPosition(end) - только как запасной вариант */
     uint64_t size = 0;
     UINTN info_sz = 0;
     st = file->GetInfo(file, &gFileInfoGuid, &info_sz, (void *)0);
@@ -268,15 +268,15 @@ static EFI_STATUS load_kernel_segments(uint8_t *buf, uint64_t *out_entry) {
 /* ===================== видеорежим (GOP) ===================== */
 static void setup_graphics(void) {
     EFI_GRAPHICS_OUTPUT_PROTOCOL *gop;
-    g_bootinfo.fb.phys_base = 0;   /* по умолчанию — нет графики */
+    g_bootinfo.fb.phys_base = 0;   /* по умолчанию - нет графики */
 
     EFI_STATUS st = gBS->LocateProtocol(&gGopGuid, (void *)0, (void **)&gop);
     if (EFI_ERROR(st)) {
-        log_line("[boot] GOP not found — kernel will use serial only");
+        log_line("[boot] GOP not found - kernel will use serial only");
         return;
     }
 
-    /* ищем 1024x768; если нет — оставляем текущий режим */
+    /* ищем 1024x768; если нет - оставляем текущий режим */
     int chosen = -1;
     for (uint32_t m = 0; m < gop->Mode->MaxMode; m++) {
         UINTN info_size;
@@ -335,7 +335,7 @@ static EFI_STATUS exit_boot_services(EFI_HANDLE image) {
             g_bootinfo.mmap_size         = map_size;
             g_bootinfo.mmap_desc_size    = desc_size;
             g_bootinfo.mmap_desc_version = desc_ver;
-            log_line("[boot] ExitBootServices OK — bye, firmware!");
+            log_line("[boot] ExitBootServices OK - bye, firmware!");
             return EFI_SUCCESS;
         }
         log_line("[boot] ExitBootServices retry...");
@@ -348,21 +348,21 @@ static EFI_STATUS exit_boot_services(EFI_HANDLE image) {
 /* ===================== diag-маркеры: полосы в fb напрямую =====================
  * Рисуем в GOP framebuffer БЕЗ прошивки и консоли. По фото экрана видно,
  * до какого этапа дошла загрузка (даже если падает текст/serial).
- * Легенда v0.2.4 (ядро вшито в BOOTX64.EFI — файловая система не нужна):
- *   M1 синий весь экран   — загрузчик жив, GOP найден, fb пишется
- *   R1..R4 оранжевые слои — (fallback: шаги чтения с ESP) /
+ * Легенда v0.2.4 (ядро вшито в BOOTX64.EFI - файловая система не нужна):
+ *   M1 синий весь экран   - загрузчик жив, GOP найден, fb пишется
+ *   R1..R4 оранжевые слои - (fallback: шаги чтения с ESP) /
  *                           встроенный payload: найден / ELF-магия / размер ок
- *   M2 зелёная полоса     — образ ядра получен и проверен
- *   M3 бирюзовая (y56-64) — PT_LOAD ядра размещены в памяти
- *   M4 пурпурная (y64-96) — ExitBootServices прошёл (прошивка отпустила)
- *   M5 циановая (y96-128) — ставит ядро: kmain отработал инициализацию IDT
+ *   M2 зелёная полоса     - образ ядра получен и проверен
+ *   M3 бирюзовая (y56-64) - PT_LOAD ядра размещены в памяти
+ *   M4 пурпурная (y64-96) - ExitBootServices прошёл (прошивка отпустила)
+ *   M5 циановая (y96-128) - ставит ядро: kmain отработал инициализацию IDT
  */
 static void diag_band(uint32_t y0, uint32_t y1, uint8_t r, uint8_t g, uint8_t b) {
     if (!g_bootinfo.fb.phys_base || g_bootinfo.fb.format > FB_FORMAT_BGR) return;
     if (!g_bootinfo.fb.pitch || !g_bootinfo.fb.width || !g_bootinfo.fb.height) return;
     /* UEFI-семантика байтов в памяти (little-endian u32):
-     *   FB_FORMAT_RGB = PixelRedGreenBlue: байт0=R → u32 = R | G<<8 | B<<16
-     *   FB_FORMAT_BGR = PixelBlueGreenRed: байт0=B → u32 = B | G<<8 | R<<16 */
+     *   FB_FORMAT_RGB = PixelRedGreenBlue: байт0=R -> u32 = R | G<<8 | B<<16
+     *   FB_FORMAT_BGR = PixelBlueGreenRed: байт0=B -> u32 = B | G<<8 | R<<16 */
     uint32_t v = (g_bootinfo.fb.format == FB_FORMAT_RGB)
                ? ((uint32_t)b << 16) | ((uint32_t)g << 8) | r
                : ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
@@ -391,23 +391,23 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
 
     if (gST->ConOut) {
         gST->ConOut->ClearScreen(gST->ConOut);
-        screen_print(u"AresOS loader (BOOTX64.EFI) v0.5.3\r\n");
+        screen_print(u"AresOS loader (BOOTX64.EFI) v0.5.4\r\n");
     }
 
-    /* графику поднимаем ПЕРВОЙ (SetMode сам очищает экран) — нужна для маркеров */
+    /* графику поднимаем ПЕРВОЙ (SetMode сам очищает экран) - нужна для маркеров */
     setup_graphics();
     diag_band(0, 0xFFFFFFFF, 0x00, 0x00, 0xC0);      /* M1: весь экран синий */
     serial_str("[diag] M1 loader-alive GOP-ok\n");
     log_line("[boot] stage 1: console up");
 
-    /* сторожевой таймер — выключить (иначе ребут через 5 минут) */
+    /* сторожевой таймер - выключить (иначе ребут через 5 минут) */
     gBS->SetWatchdogTimer(0, 0, 0, (const CHAR16 *)0);
 
     uint8_t *kbuf = (uint8_t *)0;
     UINTN ksize = 0;
     EFI_STATUS st = read_kernel_embedded(&kbuf, &ksize);
     if (EFI_ERROR(st)) {
-        serial_str("[boot] no embedded payload — fallback to KERNEL.ELF on ESP\n");
+        serial_str("[boot] no embedded payload - fallback to KERNEL.ELF on ESP\n");
         st = read_kernel_file(&kbuf, &ksize);
         if (EFI_ERROR(st)) goto hang;
     }
@@ -424,7 +424,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
     g_bootinfo.magic = BOOTINFO_MAGIC;
 
     /* M4: RSDP из EFI ConfigurationTable (GUID ACPI 2.0/1.0).
-       На UEFI-загрузке скан 0xE0000 может НИЧЕГО не найти — это единственный
+       На UEFI-загрузке скан 0xE0000 может НИЧЕГО не найти - это единственный
        надёжный путь. Делать ДО ExitBootServices. */
     {
         g_bootinfo.rsdp_phys = 0;
@@ -448,13 +448,13 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
             }
         }
         if (!g_bootinfo.rsdp_phys)
-            serial_str("[boot] no RSDP in EFI cfg table — kernel scans BIOS area\n");
+            serial_str("[boot] no RSDP in EFI cfg table - kernel scans BIOS area\n");
     }
 
     /* ВАЖНО: после этого вызова никакие Boot Services больше нельзя трогать */
     st = exit_boot_services(image_handle);
     if (EFI_ERROR(st)) goto hang;
-    /* прошивка отдала управление; fb — просто память, писать всё ещё можно */
+    /* прошивка отдала управление; fb - просто память, писать всё ещё можно */
     diag_band(64, 96, 0xC0, 0x00, 0xC0);             /* M4: ExitBootServices OK */
     serial_str("[diag] M4 exit-boot-services-ok\n");
 
@@ -464,8 +464,8 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
     __builtin_unreachable();
 
 hang:
-    log_line("[boot] FATAL — system halted");
-    /* аварийное состояние: полосы-«усы» ниже маркеров, чтобы было видно на фото */
+    log_line("[boot] FATAL - system halted");
+    /* аварийное состояние: полосы-"усы" ниже маркеров, чтобы было видно на фото */
     for (uint32_t yy = 128; yy < 768; yy += 16)
         diag_band(yy, yy + 8, 0xC0, 0x20, 0x00);
     for (;;) __asm__ volatile ("hlt");

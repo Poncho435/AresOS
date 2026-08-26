@@ -1,6 +1,6 @@
-/* AresOS — LAPIC + IOAPIC (M4).
+/* AresOS - LAPIC + IOAPIC (M4).
  * Ставки: регистры LAPIC identity-mapped в нашей VMM (0..4G).
- * Калибровка таймера — по PIT каналу 2 (одноразовый ~50 мс, gate на порту 0x61). */
+ * Калибровка таймера - по PIT каналу 2 (одноразовый ~50 мс, gate на порту 0x61). */
 #include "lapic.h"
 #include "acpi.h"
 #include "io.h"
@@ -48,7 +48,7 @@ static int pit_one_shot_50ms(void) {
     outb(0x42, TICKS & 0xFF);
     outb(0x42, (TICKS >> 8) & 0xFF);
     a = inb(0x61);
-    outb(0x61, (uint8_t)(a | 0x01));           /* gate on → старт */
+    outb(0x61, (uint8_t)(a | 0x01));           /* gate on -> старт */
     for (uint64_t i = 0; i < 100000000; i++)
         if (inb(0x61) & 0x20) return 1;        /* OUT=1: отсчёт кончился */
     return 0;
@@ -69,15 +69,15 @@ int lapic_init(void) {
     lwr(L_TMRDIV, 0x3);              /* делитель 16 */
     lwr(L_LVT_TMR, TIMER_VECTOR);    /* one-shot */
 
-    /* --- калибровка: ДВА замера по PIT ch2, должны совпасть ±5% ---
+    /* --- калибровка: ДВА замера по PIT ch2, должны совпасть +-5% ---
      * v0.5.1: на части VM (VirtualBox/NEM) TMRCUR/гейт ведут себя странно и
-     * одиночный замер врал в сотни раз → таймер улетал на ~10 МГц. Лучше
+     * одиночный замер врал в сотни раз -> таймер улетал на ~10 МГц. Лучше
      * честный откат на PIT, чем варп-часы. */
     uint32_t delta[2];
     for (int t = 0; t < 2; t++) {
         lwr(L_TMRINIT, 0xFFFFFFFF);
         uint32_t start = lrd(L_TMRCUR);
-        if (!pit_one_shot_50ms()) { kprintf("[lapic] PIT ch2 не ответил — откат на PIC\n"); return 0; }
+        if (!pit_one_shot_50ms()) { kprintf("[lapic] PIT ch2 не ответил - откат на PIC\n"); return 0; }
         delta[t] = start - lrd(L_TMRCUR);
         lwr(L_TMRINIT, 0);
     }
@@ -86,18 +86,18 @@ int lapic_init(void) {
     uint32_t d = delta[1];
     uint32_t diff = delta[0] > delta[1] ? delta[0] - delta[1] : delta[1] - delta[0];
     if (d < 20000 || d > 100000000u) {
-        kprintf("[lapic] замер вне диапазона (delta=%lu) — откат на PIC\n", (uint64_t)d);
+        kprintf("[lapic] замер вне диапазона (delta=%lu) - откат на PIC\n", (uint64_t)d);
         return 0;
     }
     if (diff > d / 20) {
-        kprintf("[lapic] два замера разошлись (%lu vs %lu) — LAPIC таймеру"
+        kprintf("[lapic] два замера разошлись (%lu vs %lu) - LAPIC таймеру"
                 " в этой VM верить нельзя, откат на PIC\n",
                 (uint64_t)delta[0], (uint64_t)delta[1]);
         return 0;
     }
-    uint32_t per_10ms = d / 5;       /* 50 мс → 10 мс (100 Гц) */
-    if (per_10ms < 4000) {           /* ~>25 МГц после ÷16 — чушь для bus clock */
-        kprintf("[lapic] per_10ms=%lu слишком мал — откат на PIC\n", (uint64_t)per_10ms);
+    uint32_t per_10ms = d / 5;       /* 50 мс -> 10 мс (100 Гц) */
+    if (per_10ms < 4000) {           /* ~>25 МГц после /16 - чушь для bus clock */
+        kprintf("[lapic] per_10ms=%lu слишком мал - откат на PIC\n", (uint64_t)per_10ms);
         return 0;
     }
     lwr(L_LVT_TMR, TIMER_VECTOR | 0x20000);   /* periodic */
@@ -130,7 +130,7 @@ int ioapic_route_irq(uint32_t irq, uint8_t vector) {
     uint32_t hi = acpi_bsp_apic_id() << 24;
     iowr(0x10 + gsi * 2,     lo);
     iowr(0x10 + gsi * 2 + 1, hi);
-    kprintf("[ioapic] IRQ%lu → GSI%lu, vector=%#x, dest=BSP\n",
+    kprintf("[ioapic] IRQ%lu -> GSI%lu, vector=%#x, dest=BSP\n",
             (uint64_t)irq, (uint64_t)gsi, vector);
     return 1;
 }

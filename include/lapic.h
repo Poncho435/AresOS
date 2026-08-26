@@ -1,4 +1,4 @@
-/* AresOS — LAPIC (M4): включение local APIC, EOI, таймер 100 Гц.
+/* AresOS - LAPIC (M4): включение local APIC, EOI, таймер 100 Гц.
  * IOAPIC: перенаправление IRQ1/IRQ12 на LAPIC (иначе fallback на 8259). */
 #ifndef ARES_LAPIC_H
 #define ARES_LAPIC_H

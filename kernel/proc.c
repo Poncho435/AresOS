@@ -1,17 +1,17 @@
-/* AresOS — планировщик (M5): round-robin, вытеснение тиком таймера.
+/* AresOS - планировщик (M5): round-robin, вытеснение тиком таймера.
  * Кадры одинаковой формы (irq_common): переключаемся подменой RSP перед
- * «pop/iretq» — idt_stubs.S читает g_sched_new_rsp/g_sched_old_rsp_slot. */
+ * "pop/iretq" - idt_stubs.S читает g_sched_new_rsp/g_sched_old_rsp_slot. */
 #include "proc.h"
 #include "heap.h"
 #include "kprintf.h"
 #include <string.h>
 
 #define MAX_PROC 32
-#define PROC_STACK 32768       /* 32 КиБ (v0.5.1: было 16 — pe_demo+kprintf глубокие) */
-#define HZ 100            /* таймер 100 Гц → тик 10 мс */
+#define PROC_STACK 32768       /* 32 КиБ (v0.5.1: было 16 - pe_demo+kprintf глубокие) */
+#define HZ 100            /* таймер 100 Гц -> тик 10 мс */
 #define TIMESLICE 4       /* 40 мс квант */
 
-/* читает irq_common (idt_stubs.S) — НЕ static! */
+/* читает irq_common (idt_stubs.S) - НЕ static! */
 uint64_t  g_sched_new_rsp;
 uint64_t *g_sched_old_rsp_slot;
 
@@ -28,6 +28,7 @@ typedef struct {
 static proc_t g_p[MAX_PROC];
 static int    g_n = 1, g_cur;
 static uint64_t g_ticks;
+static int    g_first_switch_logged;
 
 static void proc_trampoline(void);
 
@@ -61,7 +62,7 @@ int proc_spawn(proc_fn fn, void *arg, const char *name, int flags) {
     p->stack_base = (uint64_t)kmalloc(PROC_STACK);
     if (!p->stack_base) { kprintf("[proc] spawn '%s': нет памяти под стек\n", name); return -1; }
 
-    /* строим фейковый кадр прерывания в вершине стека — точно как irq_common:
+    /* строим фейковый кадр прерывания в вершине стека - точно как irq_common:
      * [r15..rax][vector][error][rip cs rflags rsp ss] */
     uint64_t top = (p->stack_base + PROC_STACK) & ~0xFULL;
     uint64_t *st = (uint64_t *)(uintptr_t)(top - 22 * 8);
@@ -75,7 +76,7 @@ int proc_spawn(proc_fn fn, void *arg, const char *name, int flags) {
     st[21] = 0x10;                           /* ss = kernel data */
     p->rsp = (uint64_t)(uintptr_t)st;
 
-    kprintf("[proc] spawn #%d '%s'%s → стек %lu KiB @ %#lx\n",
+    kprintf("[proc] spawn #%d '%s'%s -> стек %lu KiB @ %#lx\n",
             p->id, name, flags & PROC_F_BACKGROUND ? " [bg]" : "",
             (uint64_t)PROC_STACK >> 10, p->stack_base);
     return g_n++;
@@ -125,6 +126,8 @@ void proc_yield(void) { proc_sleep(10); }
 
 void sched_tick(void) {
     g_ticks++;
+    if (g_ticks == 1)
+        kprintf("[m5] тики таймера бегут (IRQ жив)\n");
     proc_t *cur = &g_p[g_cur];
     cur->ticks++;
 
@@ -133,7 +136,7 @@ void sched_tick(void) {
         if (g_p[i].state == PROC_SLEEP && g_ticks >= g_p[i].wake_tick)
             g_p[i].state = PROC_READY;
 
-    /* квант не вышел — текущий продолжает (правило одно для всех) */
+    /* квант не вышел - текущий продолжает (правило одно для всех) */
     if (cur->state == PROC_RUNNING && (cur->ticks % TIMESLICE) != 0)
         return;
     if (cur->state == PROC_RUNNING) cur->state = PROC_READY;
@@ -146,12 +149,17 @@ void sched_tick(void) {
             g_p[i].state = PROC_RUNNING;
             g_sched_new_rsp = g_p[i].rsp;     /* irq_common подменит RSP */
             g_cur = i;
+            if (!g_first_switch_logged) {     /* разовая диагностика по фото */
+                g_first_switch_logged = 1;
+                kprintf("[proc] планировщик: первый context-switch -> #%d '%s'\n",
+                        g_p[i].id, g_p[i].name);
+            }
             return;
         }
     }
-    /* Некуда переключаться. Текущий SLEEP/DEAD — оставляем как есть
+    /* Некуда переключаться. Текущий SLEEP/DEAD - оставляем как есть
      * (его разбудит wake-scan на будущих тиках). Force-RUNNING тут был бы
      * ранним пробуждением: проспавший увидел бы RUNNING и вышел бы из
-     * proc_sleep раньше срока. READY — возвращаем в RUNNING сами. */
+     * proc_sleep раньше срока. READY - возвращаем в RUNNING сами. */
     if (cur->state == PROC_READY) cur->state = PROC_RUNNING;
 }

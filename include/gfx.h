@@ -1,4 +1,4 @@
-/* AresOS — gfx: графические примитивы поверх framebuffer (для десктопа) */
+/* AresOS - gfx: графические примитивы поверх framebuffer (для десктопа) */
 #ifndef ARES_GFX_H
 #define ARES_GFX_H
 

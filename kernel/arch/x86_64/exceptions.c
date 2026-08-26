@@ -1,7 +1,7 @@
-/* AresOS — обработчик исключений: печать причины и всех регистров.
- * "Красивый крах" вместо мёртвого зависания — главный инструмент M2.
+/* AresOS - обработчик исключений: печать причины и всех регистров.
+ * "Красивый крах" вместо мёртвого зависания - главный инструмент M2.
  * v0.2.5: декодирование error code, CR3/IDTR, классификация rip
- * (в т.ч. «rip внутри стека» = испорченный адрес возврата), канарейка. */
+ * (в т.ч. "rip внутри стека" = испорченный адрес возврата), канарейка. */
 #include <stdint.h>
 #include "kprintf.h"
 #include "regs.h"
@@ -26,7 +26,7 @@ extern char _stack_bottom[], _stack_top[], _stack_guard[];
 
 static const char *region_of(uint64_t a) {
     if (a >= (uint64_t)_stack_bottom && a < (uint64_t)_stack_top)
-        return "ВНУТРИ СТЕКА ядра (исполнение из стека — испорченный адрес возврата!)";
+        return "ВНУТРИ СТЕКА ядра (исполнение из стека - испорченный адрес возврата!)";
     if (a >= (uint64_t)__kernel_start && a < (uint64_t)__kernel_end)
         return "внутри образа ядра";
     if (a < 0x100000) return "нижняя память (<1 MiB)";
@@ -43,10 +43,10 @@ static void print_error_code(regs_t *r) {
                     e & 1, (e >> 1) & 1, (e >> 2) & 1, e & ~7ULL);
             if ((e >> 1) & 1) {
                 uint64_t idx = (e >> 3) & 0x1FFF;
-                kprintf(" — указывает на IDT[%lu]", idx);
+                kprintf(" - указывает на IDT[%lu]", idx);
             }
         } else {
-            kprintf(" [0: не сегментная — неканонический адрес / прив. инструкция / лимит]");
+            kprintf(" [0: не сегментная - неканонический адрес / прив. инструкция / лимит]");
         }
     }
     if (r->vector == 14) {
@@ -83,7 +83,7 @@ void exception_handler(regs_t *r) {
     for (int i = 0; i < 8; i++)
         if (g[i] != 0xA9E5C0FFEE15DA7AULL) ok = 0;
     kprintf("  stack canary: %s (guard[0]=%#lx, стек %lu КиБ, bottom=%p top=%p)\n",
-            ok ? "OK — переполнения не было" : "*** BROKEN — СТЕК ПЕРЕПОЛНЕН! ***",
+            ok ? "OK - переполнения не было" : "*** BROKEN - СТЕК ПЕРЕПОЛНЕН! ***",
             g[0], (uint64_t)(_stack_top - _stack_bottom) >> 10,
             _stack_bottom, _stack_top);
 
