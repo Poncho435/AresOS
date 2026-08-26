@@ -105,10 +105,10 @@ int proc_list(proc_info_t *out, int max) {
 
 const char *proc_state_name(int s) {
     switch (s) {
-    case PROC_READY:   return "ready ";
-    case PROC_RUNNING: return "run   ";
-    case PROC_SLEEP:   return "sleep ";
-    default:           return "dead  ";
+    case PROC_READY:   return "готов ";
+    case PROC_RUNNING: return "работ.";
+    case PROC_SLEEP:   return "спит  ";
+    default:           return "мёртв ";
     }
 }
 

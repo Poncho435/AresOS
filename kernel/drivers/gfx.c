@@ -1,6 +1,6 @@
 /* AresOS — gfx: минимальная графическая библиотека ядра. */
 #include "gfx.h"
-#include "../drivers/font8x8.h"
+#include "fontex.h"
 #include <string.h>
 
 static bootinfo_fb_t g_fb;
@@ -82,8 +82,11 @@ void gfx_frame_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, gfx_color_t 
 void gfx_text(uint32_t x, uint32_t y, const char *s, gfx_color_t fg) {
     if (!g_ready) return;
     uint32_t px = pack(fg);
+    int st = 0;
     for (; *s; s++, x += 8) {
-        const uint8_t *glyph = font8x8_basic[(uint8_t)*s & 0x7F];
+        int slot = fontex_slot(&st, (uint8_t)*s);
+        if (slot < 0) { x -= 8; continue; }   /* ждём второй байт UTF-8 */
+        const uint8_t *glyph = fontex_glyph(slot);
         for (uint32_t gy = 0; gy < 8; gy++) {
             if (y + gy >= g_fb.height) break;
             uint8_t bits = glyph[gy];

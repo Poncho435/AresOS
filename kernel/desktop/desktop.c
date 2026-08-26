@@ -144,9 +144,32 @@ static void panel_draw(void) {
     gfx_fill_rect(0, PANEL_H - 1, g_scr_w, 1, C_PLINE);
     gfx_text_bold(14, 13, "AresOS", C_ACCENT);
     gfx_fill_round_rect(86, 8, 62, 18, 6, GFX_RGB(0x1B, 0x20, 0x30));
-    gfx_text(94, 13, "v0.5.1", C_TXT2);
-    gfx_text(g_scr_w - 226, 13, "F1 About   F2 Tasks   F3 Logs", C_TXT2);
+    gfx_text(94, 13, "v0.5.2", C_TXT2);
+    /* кнопки-пускатели приложений — запуск значками (F-ключи остаются дублём) */
+    static const char *BTN[APP_N] = { "О системе", "Задачи", "Логи" };
+    static const gfx_color_t BC[APP_N] = {
+        GFX_RGB(0x4A, 0x9D, 0xFF), GFX_RGB(0xFF, 0x9E, 0x49), GFX_RGB(0x4F, 0xC3, 0x7B),
+    };
+    for (int i = 0; i < APP_N; i++) {
+        int32_t bx = 160 + i * 98;
+        int hov = (mouse_x() >= bx && mouse_x() < bx + 90 && mouse_y() < PANEL_H);
+        gfx_fill_round_rect(bx, 5, 90, 24, 6, hov ? GFX_RGB(0x24, 0x2A, 0x40)
+                                                  : GFX_RGB(0x17, 0x1B, 0x29));
+        gfx_fill_round_rect(bx + 9, 14, 8, 8, 3, BC[i]);
+        gfx_text(bx + 24, 13, BTN[i], hov ? C_TXT : C_TXT2);
+        if (g_w[i].open)
+            gfx_fill_round_rect(bx + 10, 26, 70, 2, 1, BC[i]);
+    }
     clock_draw();
+}
+
+static int panel_hit(int32_t mx, int32_t my) {    /* кнопка приложения или -1 */
+    if (my >= PANEL_H) return -1;
+    for (int i = 0; i < APP_N; i++) {
+        int32_t bx = 160 + i * 98;
+        if (mx >= bx && mx < bx + 90) return i;
+    }
+    return -1;
 }
 
 /* ---------------- док ---------------- */
@@ -229,9 +252,9 @@ static void pill_draw(void) {
 static void draw_content(int app, int32_t x, int32_t y, int32_t w, int32_t h);
 
 static const struct { const char *t; gfx_color_t c; } APP_META[APP_N] = {
-    { "About AresOS",  GFX_RGB(0x4A, 0x9D, 0xFF) },
-    { "Task Manager",  GFX_RGB(0xFF, 0x9E, 0x49) },
-    { "System logs — terminal", GFX_RGB(0x4F, 0xC3, 0x7B) },
+    { "О системе AresOS",  GFX_RGB(0x4A, 0x9D, 0xFF) },
+    { "Диспетчер задач",  GFX_RGB(0xFF, 0x9E, 0x49) },
+    { "Логи системы — терминал", GFX_RGB(0x4F, 0xC3, 0x7B) },
 };
 
 static void draw_window(int app) {
@@ -248,10 +271,17 @@ static void draw_window(int app) {
     /* цветная точка приложения + заголовок */
     gfx_fill_round_rect(x + 12, y + 9, 12, 12, 3, APP_META[app].c);
     gfx_text_bold(x + 32, y + 11, APP_META[app].t, C_TXT);
-    /* «traffic lights»: красная = закрыть */
-    gfx_fill_round_rect(x + w - 24, y + 10, 10, 10, 3, C_RED);
-    gfx_fill_round_rect(x + w - 40, y + 10, 10, 10, 3, GFX_RGB(0x3A, 0x41, 0x56));
-    gfx_fill_round_rect(x + w - 56, y + 10, 10, 10, 3, GFX_RGB(0x3A, 0x41, 0x56));
+    /* «traffic lights»: красная = ЗАКРЫТЬ (с крестиком), серые — декор */
+    int hovx = (mouse_x() >= x + w - 28 && mouse_x() < x + w - 8 &&
+                mouse_y() >= y + 6 && mouse_y() < y + 26);
+    gfx_fill_round_rect(x + w - 25, y + 9, 12, 12, 3,
+                        hovx ? GFX_RGB(0xF0, 0x6A, 0x60) : C_RED);
+    for (int i = 0; i < 6; i++) {                          /* крестик × */
+        gfx_pixel(x + w - 22 + i,     y + 12 + i, GFX_RGB(0xFF, 0xEE, 0xEE));
+        gfx_pixel(x + w - 22 + 5 - i, y + 12 + i, GFX_RGB(0xFF, 0xEE, 0xEE));
+    }
+    gfx_fill_round_rect(x + w - 43, y + 10, 10, 10, 3, GFX_RGB(0x3A, 0x41, 0x56));
+    gfx_fill_round_rect(x + w - 59, y + 10, 10, 10, 3, GFX_RGB(0x3A, 0x41, 0x56));
     draw_content(app, x, y + WIN_BAR_H, w, h - WIN_BAR_H);
 }
 
@@ -262,17 +292,18 @@ static void about_draw(int32_t x, int32_t y, int32_t w) {
     (void)w;
     int32_t cx = x + 16;
     int32_t yy = y + 14;
-    gfx_text_bold(cx, yy, "AresOS kernel 0.5.1 (x86-64)", C_TXT); yy += 18;
+    gfx_text_bold(cx, yy, "Ядро AresOS 0.5.2 (x86-64)", C_TXT); yy += 18;
     gfx_text(cx, yy, g_ram_line, C_TXT2); yy += 14;
-    gfx_text(cx, yy, "IRQ model: IOAPIC+LAPIC 100 Hz (PIC fallback)", C_TXT2); yy += 14;
-    gfx_text(cx, yy, "Heap/VMM alive, PE32+ loader inside kernel", C_TXT2); yy += 14;
+    gfx_text(cx, yy, "IRQ: IOAPIC+LAPIC 100 Гц (запасной PIC)", C_TXT2); yy += 14;
+    gfx_text(cx, yy, "Куча/VMM живы, загрузчик PE32+ в ядре", C_TXT2); yy += 14;
     if (g_pe_line[0]) { gfx_text(cx, yy, g_pe_line, C_GREEN); yy += 14; }
     yy += 4;
     gfx_fill_rect(cx, yy, 240, 1, C_PLINE); yy += 8;
-    gfx_text(cx, yy, "VM tip: click inside the window to", C_ACCENT); yy += 12;
-    gfx_text(cx, yy, "capture the mouse! Ctrl+Arrows =", C_ACCENT); yy += 12;
-    gfx_text(cx, yy, "move cursor by keyboard.", C_ACCENT); yy += 14;
-    gfx_text(cx, yy, "Drag windows by title, Esc closes top.", C_TXT2);
+    gfx_text(cx, yy, "Совет для ВМ: кликни в окно VirtualBox,", C_ACCENT); yy += 12;
+    gfx_text(cx, yy, "чтобы захватить мышь! Полный экран (Host+F)", C_ACCENT); yy += 12;
+    gfx_text(cx, yy, "тоже помогает. Ctrl+стрелки — аварийная мышь.", C_ACCENT); yy += 14;
+    gfx_text(cx, yy, "Открыть: значки дока/панели или F1/F2/F3.", C_TXT2); yy += 12;
+    gfx_text(cx, yy, "Закрыть: красная ×, Esc или повторная клавиша.", C_TXT2);
 }
 
 /* ---- приложение Task Manager ---- */
@@ -287,11 +318,11 @@ static void tm_draw(int32_t x, int32_t y, int32_t w, int32_t h) {
     gfx_fill_round_rect(cx, hy, w - 24, 16, 4, C_ROW_ALT);
     const gfx_color_t HC = C_CYAN;
     gfx_text(cx + 10,        hy + 4, "id",    HC);
-    gfx_text(cx + 10 + 4*8,  hy + 4, "name",  HC);
-    gfx_text(cx + 10 + 18*8, hy + 4, "state", HC);
-    gfx_text(cx + 10 + 25*8, hy + 4, "ticks", HC);
+    gfx_text(cx + 10 + 4*8,  hy + 4, "имя",   HC);
+    gfx_text(cx + 10 + 18*8, hy + 4, "статус", HC);
+    gfx_text(cx + 10 + 25*8, hy + 4, "тики",  HC);
     gfx_text(cx + 10 + 34*8, hy + 4, "cpu",   HC);
-    gfx_text(cx + 10 + 50*8, hy + 4, "type",  HC);
+    gfx_text(cx + 10 + 50*8, hy + 4, "тип",   HC);
 
     uint64_t now = sched_ticks();
     uint64_t span = now - g_tm_prev_total;
@@ -351,14 +382,14 @@ static void tm_draw(int32_t x, int32_t y, int32_t w, int32_t h) {
 
         /* type pill */
         int bg = pi[i].flags & PROC_F_BACKGROUND;
-        gfx_fill_round_rect(cx + 10 + 50*8, ry - 1, 40, 12, 3, bg ? GFX_RGB(0x1E, 0x33, 0x28) : GFX_RGB(0x1E, 0x29, 0x3D));
-        gfx_text(cx + 10 + 50*8 + 10, ry + 1, bg ? "bg" : "app", bg ? C_GREEN : C_BLUE);
+        gfx_fill_round_rect(cx + 10 + 50*8 - 1, ry - 2, 42, 13, 3, bg ? GFX_RGB(0x1E, 0x33, 0x28) : GFX_RGB(0x1E, 0x29, 0x3D));
+        gfx_text(cx + 10 + 50*8 + 5, ry + 1, bg ? "фон" : "обыч", bg ? C_GREEN : C_BLUE);
     }
     /* нижняя строка: нагрузка */
     char num[16], line[54];
     char *p = line;
-    pcat(&p, "procs: "); u32dec((uint32_t)n, num); pcat(&p, num);
-    pcat(&p, "  load: ");
+    pcat(&p, "процессов: "); u32dec((uint32_t)n, num); pcat(&p, num);
+    pcat(&p, "  нагрузка: ");
     uint32_t lp = span ? (uint32_t)(busy * 100 / span) : 0;
     if (lp > 100) lp = 100;
     u32dec(lp, num); pcat(&p, num); *p++ = '%'; *p = 0;
@@ -425,9 +456,9 @@ static void logs_draw(int32_t x, int32_t y, int32_t w, int32_t h) {
     /* подсказка */
     char info[48], num[16];
     char *p = info;
-    pcat(&p, "lines: ");
+    pcat(&p, "строк: ");
     u32dec((uint32_t)total, num); pcat(&p, num);
-    pcat(&p, g_log_scroll ? "  (Up/Down/PgUp/PgDn scroll)" : "  (live tail)");
+    pcat(&p, g_log_scroll ? "  (Up/Down/PgUp/PgDn — листать)" : "  (прямой хвост)");
     gfx_text(cx + 4, y + 2, info, C_TXT2);
 }
 
@@ -568,11 +599,11 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
     /* статичные строки About */
     {
         char num[16]; char *p = g_ram_line;
-        pcat(&p, "RAM total ");
+        pcat(&p, "Память: всего ");
         u32dec((uint32_t)total_mib, num); pcat(&p, num);
-        pcat(&p, " MiB · free ");
+        pcat(&p, " МиБ, свободно ");
         u32dec((uint32_t)free_mib, num); pcat(&p, num);
-        pcat(&p, " MiB");
+        pcat(&p, " МиБ");
     }
     g_pe_line[0] = 0;
 
@@ -588,9 +619,9 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
         char *p = g_pe_line;
         g_pe_ok = ((uint32_t)ret == ARES_PE_TEST_OK);
         if (g_pe_ok) {
-            strcpy_small(g_pe_line, "PE test: OK (ret=0xA2E5)");
+            strcpy_small(g_pe_line, "PE-тест: OK (ret=0xA2E5)");
         } else {
-            pcat(&p, "PE test: FAIL ret=");
+            pcat(&p, "PE-тест: ОШИБКА ret=");
             char num[16]; u32dec((uint32_t)(-(int32_t)ret), num);
             if (ret < 0) *p++ = '-';
             pcat(&p, num);
@@ -656,6 +687,13 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
         if (pressed) {
             int32_t mx = mouse_x(), my = mouse_y();
             int hit = -1, topmost = -1;
+            /* сначала — кнопки панели (пускатели приложений) */
+            if ((hit = panel_hit(mx, my)) >= 0) {
+                app_toggle(hit);
+                need_world = 1;
+                kprintf("[desktop] panel toggle app %d\n", hit);
+                goto click_done;
+            }
             /* окна сверху вниз */
             for (int i = APP_N - 1; i >= 0; i--) {
                 int a = g_z[i];
@@ -686,6 +724,7 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
                 kprintf("[desktop] dock toggle app %d\n", hit);
             }
         }
+    click_done:;
 
         if (drag_app >= 0) {
             if (!left) {
@@ -753,7 +792,7 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
                 if (tm_dirty)  draw_window(APP_TASKMAN);
                 if (log_dirty) draw_window(APP_LOGS);
                 if (aux_dirty) { clock_draw(); pill_draw(); }
-                if (moved && !rep_on) pill_draw();
+                if (moved && !rep_on) { pill_draw(); panel_draw(); }  /* hover-эффекты */
             }
             cursor_show(mouse_x(), mouse_y());
         }

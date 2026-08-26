@@ -1,7 +1,7 @@
 /* AresOS — текстовая консоль поверх линейного framebuffer от GOP.
  * Шрифт 8x8, скролл переносом памяти. Цвета: светло-серый по тёмно-синему. */
 #include "fb_console.h"
-#include "font8x8.h"
+#include "fontex.h"
 #include <string.h>
 #include <stdint.h>
 
@@ -74,8 +74,8 @@ static void newline(void) {
     }
 }
 
-static void draw_glyph(char c, uint32_t cx, uint32_t cy) {
-    const uint8_t *glyph = font8x8_basic[(uint8_t)c & 0x7F];
+static void draw_glyph_slot(int slot, uint32_t cx, uint32_t cy) {
+    const uint8_t *glyph = fontex_glyph(slot);
     uint32_t *fb = fb_ptr();
     uint32_t px = cx * GLYPH_W, py = cy * GLYPH_H;
     for (uint32_t y = 0; y < GLYPH_H; y++) {
@@ -85,8 +85,12 @@ static void draw_glyph(char c, uint32_t cx, uint32_t cy) {
             line[px + x] = (bits >> x) & 1 ? g_fg : g_bg;
     }
 }
+static void draw_glyph(char c, uint32_t cx, uint32_t cy) {
+    draw_glyph_slot((uint8_t)c & 0x7F, cx, cy);
+}
 
 void fb_console_putc(char c) {
+    static int g_utf;                      /* состояние UTF-8 между байтами */
     if (!g_ready) return;
     if (c == '\n') { newline(); return; }
     if (c == '\r') { g_cur_x = 0; return; }
@@ -99,7 +103,9 @@ void fb_console_putc(char c) {
         draw_glyph(' ', g_cur_x, g_cur_y);
         return;
     }
-    draw_glyph(c, g_cur_x, g_cur_y);
+    int slot = fontex_slot(&g_utf, (uint8_t)c);
+    if (slot < 0) return;                  /* половина UTF-8 — ждём второй байт */
+    draw_glyph_slot(slot, g_cur_x, g_cur_y);
     if (++g_cur_x >= g_cols) newline();
 }
 
