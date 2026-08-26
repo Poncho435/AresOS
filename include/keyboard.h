@@ -20,5 +20,12 @@ int  keyboard_getch(void);         /* -1 = буфер пуст; ASCII или KEY
 #define KEY_DOWN  0x221
 #define KEY_LEFT  0x222
 #define KEY_RIGHT 0x223
+#define KEY_PGUP  0x224
+#define KEY_PGDN  0x225
+/* v0.5.0: Ctrl+стрелки = ручное движение курсора (спасательный круг для VM) */
+#define KEY_MLEFT  0x230
+#define KEY_MRIGHT 0x231
+#define KEY_MUP    0x232
+#define KEY_MDOWN  0x233
 
 #endif

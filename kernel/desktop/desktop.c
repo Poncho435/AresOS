@@ -1,464 +1,724 @@
-/* AresOS — прототип рабочего стола.
- * Обои-градиент, верхняя панель, док, окно «About AresOS» (таскается за заголовок),
- * курсор стрелка (XOR). Полноценный оконный менеджер — после M6, это демо-каркас. */
+/* AresOS — рабочий стол v0.5.0: современная тёмная тема «midnight aurora».
+ *  - кэшированные строки обоев → мгновенная перерисовка мира
+ *  - верхняя панель со «стеклом», часы, хинты F1/F2/F3
+ *  - плавающий док: 3 значка-приложения, открываются мышкой и клавишами
+ *  - окна со z-порядком: перетаскивание, raise по клику, красная точка закрытия
+ *  - приложения: About (F1), Диспетчер задач (F2), Логи (F3) — журнал ядра
+ *  - курсор: save/restore, чёрный контур + белое тело; Ctrl+стрелки = клавиатурная мышь */
 #include "desktop.h"
 #include "gfx.h"
 #include "mouse.h"
-#include "pic.h"
 #include "keyboard.h"
 #include "proc.h"
+#include "logbuf.h"
 #include "kprintf.h"
 #include "pe.h"
+#include "heap.h"
 #include <stdint.h>
 
-#define PANEL_H 30
-#define DOCK_H  46
-#define WIN_TITLE_H 26
+#define PANEL_H     34
+#define DOCK_H      58
+#define DOCK_ICON   44
+#define DOCK_STEP   56
+#define WIN_BAR_H   30
+#define TERM_LINE_H 10
+#define TM_REFRESH  33            /* 3 раза/сек */
 
-static const gfx_color_t COL_BG_TOP    = GFX_RGB(0x12, 0x18, 0x3D);
-static const gfx_color_t COL_BG_BOT    = GFX_RGB(0x0B, 0x3D, 0x3A);
-static const gfx_color_t COL_PANEL     = GFX_RGB(0x14, 0x16, 0x25);
-static const gfx_color_t COL_PANEL_TXT = GFX_RGB(0xE8, 0xE8, 0xF0);
-static const gfx_color_t COL_ACCENT    = GFX_RGB(0xFF, 0x9E, 0x49);  /* "огненный" акцент AresOS */
-static const gfx_color_t COL_WIN_BODY  = GFX_RGB(0xF2, 0xF2, 0xF2);
-static const gfx_color_t COL_WIN_TXT   = GFX_RGB(0x22, 0x22, 0x33);
-static const gfx_color_t COL_WIN_BAR   = GFX_RGB(0x2B, 0x3E, 0x7A);
-static const gfx_color_t COL_WIN_BAR_T = GFX_RGB(0xFF, 0xFF, 0xFF);
+/* ---------- палитра ---------- */
+static const gfx_color_t C_PANEL   = GFX_RGB(0x0E, 0x10, 0x18);
+static const gfx_color_t C_PLINE   = GFX_RGB(0x2A, 0x30, 0x48);
+static const gfx_color_t C_TXT     = GFX_RGB(0xE7, 0xEA, 0xF3);
+static const gfx_color_t C_TXT2    = GFX_RGB(0x8B, 0x92, 0xA9);
+static const gfx_color_t C_ACCENT  = GFX_RGB(0xFF, 0x9E, 0x49);
+static const gfx_color_t C_GREEN   = GFX_RGB(0x4F, 0xC3, 0x7B);
+static const gfx_color_t C_BLUE    = GFX_RGB(0x4A, 0x9D, 0xFF);
+static const gfx_color_t C_CYAN    = GFX_RGB(0x56, 0xC2, 0xE8);
+static const gfx_color_t C_PURPLE  = GFX_RGB(0xB0, 0x8A, 0xE0);
+static const gfx_color_t C_YELLOW  = GFX_RGB(0xE8, 0xC1, 0x5A);
+static const gfx_color_t C_RED     = GFX_RGB(0xE0, 0x56, 0x4F);
+static const gfx_color_t C_WIN_BG  = GFX_RGB(0x1A, 0x1E, 0x2A);
+static const gfx_color_t C_WIN_BAR = GFX_RGB(0x23, 0x28, 0x38);
+static const gfx_color_t C_WIN_BR  = GFX_RGB(0x0B, 0x0D, 0x14);
+static const gfx_color_t C_ROW_ALT = GFX_RGB(0x1F, 0x24, 0x33);
+static const gfx_color_t C_BAR_BG  = GFX_RGB(0x26, 0x2B, 0x3D);
+static const gfx_color_t C_TERM_BG = GFX_RGB(0x0B, 0x0F, 0x16);
+static const gfx_color_t C_TERM_LN = GFX_RGB(0xAE, 0xB6, 0xC8);
+static const gfx_color_t C_TERM_AL = GFX_RGB(0x0E, 0x13, 0x20);
+static const gfx_color_t C_SHADOW  = GFX_RGB(0x05, 0x06, 0x0A);
+static const gfx_color_t C_DOCK    = GFX_RGB(0x14, 0x17, 0x22);
+static const gfx_color_t C_DOCK_BR = GFX_RGB(0x2E, 0x35, 0x50);
 
-/* ---------------- окно ---------------- */
-static void strcpy_small(char *dst, const char *src);
-static void u32dec(uint32_t v, char *out);
+/* обои: трёхстопный градиент (кэш packed-строк ниже) */
+static const gfx_color_t BG0 = GFX_RGB(0x0C, 0x10, 0x24);
+static const gfx_color_t BG1 = GFX_RGB(0x13, 0x1A, 0x3C);
+static const gfx_color_t BG2 = GFX_RGB(0x0E, 0x2A, 0x38);
 
-typedef struct {
-    int32_t x, y, w, h;
-    char l1[48], l2[48], l3[48], l4[48], l5[48], l6[48];
-} win_t;
+static uint32_t *g_bg;            /* packed цвет каждой строки экрана */
+static uint32_t  g_scr_w, g_scr_h;
 
-static win_t g_win;
-static uint32_t g_scr_w, g_scr_h;
-
-static void draw_window(const win_t *w) {
-    /* тень */
-    gfx_fill_rect(w->x + 4, w->y + 4, w->w, w->h, GFX_RGB(0, 0, 0));
-    /* рамка + тело */
-    gfx_fill_rect(w->x, w->y, w->w, w->h, COL_WIN_BODY);
-    /* заголовочная панель */
-    gfx_fill_rect(w->x, w->y, w->w, WIN_TITLE_H, COL_WIN_BAR);
-    gfx_text(w->x + 8, w->y + 9, "About AresOS", COL_WIN_BAR_T);
-    /* "кнопка закрытия" — пока декоративная */
-    gfx_fill_rect(w->x + w->w - 22, w->y + 6, 14, 14, GFX_RGB(0xE0, 0x4F, 0x3F));
-    /* содержимое */
-    gfx_text(w->x + 12, w->y + WIN_TITLE_H + 14, w->l1, COL_WIN_TXT);
-    gfx_text(w->x + 12, w->y + WIN_TITLE_H + 30, w->l2, COL_WIN_TXT);
-    gfx_text(w->x + 12, w->y + WIN_TITLE_H + 46, w->l3, COL_WIN_TXT);
-    gfx_text(w->x + 12, w->y + WIN_TITLE_H + 62, w->l4, COL_WIN_TXT);
-    gfx_text(w->x + 12, w->y + WIN_TITLE_H + 86, w->l5, GFX_RGB(0x66, 0x66, 0x77));
-    /* PE-тест (M3): результат TESTPE.EXE */
-    if (w->l6[0])
-        gfx_text(w->x + 12, w->y + WIN_TITLE_H + 110, w->l6, GFX_RGB(0x11, 0x77, 0x33));
-    gfx_frame_rect(w->x, w->y, w->w, w->h, GFX_RGB(0x0F, 0x14, 0x30));
+/* ---------------- утилиты ---------------- */
+static void strcpy_small(char *dst, const char *src) { while ((*dst++ = *src++)) {} }
+static void u32dec(uint32_t v, char *out) {
+    char tmp[16]; int i = 0, j = 0;
+    if (!v) { out[0] = '0'; out[1] = 0; return; }
+    while (v) { tmp[i++] = (char)('0' + v % 10); v /= 10; }
+    while (i) out[j++] = tmp[--i];
+    out[j] = 0;
+}
+static void pcat(char **p, const char *s) { while (*s) *(*p)++ = *s++; **p = 0; }
+static int  has_prefix(const char *s, const char *pfx) {
+    while (*pfx) if (*s++ != *pfx++) return 0;
+    return 1;
+}
+static int  contains(const char *s, const char *needle) {
+    for (; *s; s++) if (has_prefix(s, needle)) return 1;
+    return 0;
 }
 
-static void erase_window(const win_t *w) {
-    /* вернуть обои на месте окна (+тень) */
-    gfx_gradient_v_rect(w->x, w->y, w->w + 4, w->h + 4, COL_BG_TOP, COL_BG_BOT);
+/* ---------------- приложения/окна ---------------- */
+enum { APP_ABOUT = 0, APP_TASKMAN, APP_LOGS, APP_N };
+typedef struct { int open; int32_t x, y, w, h; } win_t;
+static win_t g_w[APP_N];
+static int   g_z[APP_N] = { 0, 1, 2 };     /* порядок отрисовки: [N-1] — верх */
+
+static void app_raise(int a) {
+    int pos = 0;
+    for (int i = 0; i < APP_N; i++) if (g_z[i] == a) pos = i;
+    for (int i = pos; i < APP_N - 1; i++) g_z[i] = g_z[i + 1];
+    g_z[APP_N - 1] = a;
+}
+static int app_top(void) {
+    for (int i = APP_N - 1; i >= 0; i--)
+        if (g_w[g_z[i]].open) return g_z[i];
+    return -1;
+}
+static void app_toggle(int a) {
+    g_w[a].open = !g_w[a].open;
+    if (g_w[a].open) app_raise(a);
 }
 
-/* ---------------- панель и док ---------------- */
-static void draw_panel(void) {
-    gfx_fill_rect(0, 0, g_scr_w, PANEL_H, COL_PANEL);
-    gfx_fill_rect(0, PANEL_H - 2, g_scr_w, 2, COL_ACCENT);
-    gfx_text_shadow(10, 11, "AresOS", COL_ACCENT, GFX_RGB(0, 0, 0));
-    gfx_text(88, 11, "Desktop prototype", COL_PANEL_TXT);
-    gfx_text(g_scr_w - 96 - 8, 11, "v0.4.0", COL_PANEL_TXT);
+/* ---------------- обои ---------------- */
+static void bg_cache_build(void) {
+    /* вертикальный градиент BG0 → BG1 → BG2 */
+    for (uint32_t y = 0; y < g_scr_h; y++) {
+        uint32_t half = g_scr_h / 2;
+        gfx_color_t c;
+        if (y < half) {
+            int t = half ? (int)(y * 255 / half) : 0;
+            c.r = (uint8_t)(BG0.r + ((int)BG1.r - BG0.r) * t / 255);
+            c.g = (uint8_t)(BG0.g + ((int)BG1.g - BG0.g) * t / 255);
+            c.b = (uint8_t)(BG0.b + ((int)BG1.b - BG0.b) * t / 255);
+        } else {
+            int t = half ? (int)((y - half) * 255 / (g_scr_h - half)) : 0;
+            c.r = (uint8_t)(BG1.r + ((int)BG2.r - BG1.r) * t / 255);
+            c.g = (uint8_t)(BG1.g + ((int)BG2.g - BG1.g) * t / 255);
+            c.b = (uint8_t)(BG1.b + ((int)BG2.b - BG1.b) * t / 255);
+        }
+        g_bg[y] = gfx_pack(c);
+    }
 }
 
-static void draw_dock(void) {
-    uint32_t y = g_scr_h - DOCK_H;
-    gfx_fill_rect(0, y, g_scr_w, DOCK_H, COL_PANEL);
-    gfx_fill_rect(0, y, g_scr_w, 1, GFX_RGB(0x33, 0x33, 0x44));
-    /* три декоративных "значка" */
-    gfx_color_t c1 = GFX_RGB(0xFF, 0x9E, 0x49);
-    gfx_color_t c2 = GFX_RGB(0x4F, 0xC3, 0x7B);
-    gfx_color_t c3 = GFX_RGB(0x4A, 0x9D, 0xFF);
-    gfx_fill_rect(16, y + 8, 30, 30, c1);
-    gfx_fill_rect(56, y + 8, 30, 30, c2);
-    gfx_fill_rect(96, y + 8, 30, 30, c3);
-    gfx_text(16, g_scr_h - 10, "kernel", COL_PANEL_TXT);
-}
+/* ---------------- панель ---------------- */
+static uint64_t g_last_sec = 0xFFFFFFFFFFFFFFFFULL;
 
-/* v0.3.4: статус мыши — в ПАНЕЛЬ (не в консоль! спам консоли «уезжал вниз») */
-static void draw_mouse_status(void) {
-    char buf[40], num[12];
+static void clock_draw(void) {
+    uint32_t s = (uint32_t)g_last_sec;
+    char buf[16];
     char *p = buf;
-    *p++ = 'x'; *p++ = '=';
-    u32dec((uint32_t)mouse_x(), num);   strcpy_small(p, num); while (*p) p++;
-    *p++ = ' '; *p++ = 'y'; *p++ = '=';
-    u32dec((uint32_t)mouse_y(), num);   strcpy_small(p, num); while (*p) p++;
-    *p++ = ' '; *p++ = 'i'; *p++ = 'r'; *p++ = 'q'; *p++ = '=';
-    u32dec(mouse_irq_count(), num);     strcpy_small(p, num);
-    gfx_fill_rect(g_scr_w - 300, 2, 196, PANEL_H - 4, COL_PANEL);
-    gfx_text(g_scr_w - 296, 11, buf, COL_PANEL_TXT);
-}
-
-/* ================= диспетчер задач (M5) =================
- * F2 — открыть/закрыть. Таблица процессов ядра: id, имя, состояние,
- * тиков CPU, тип (normal/background). Обновляется 4 раза в секунду. */
-#define TM_W   480
-#define TM_H   320
-
-static int      g_taskman;                 /* окно открыто? */
-static int32_t  g_tm_x, g_tm_y, g_tm_h;
-static uint64_t g_tm_stamp;                /* последний рефреш (тики 100 Гц) */
-
-static void taskman_geom(void) {
-    g_tm_x = g_scr_w > TM_W ? (int32_t)(g_scr_w - TM_W) / 2 : 0;
-    g_tm_y = PANEL_H + 24;
-    g_tm_h = TM_H;
-    int32_t maxh = (int32_t)g_scr_h - DOCK_H - g_tm_y - 4;
-    if (g_tm_h > maxh) g_tm_h = maxh;
-}
-
-/* строка таблицы: смещения в символах (шрифт 8px) —
- * id@0, name@4, state@18, ticks@25 (вправо), type@36 */
-static void tm_build_row(const proc_info_t *pi, char *out) {
-    char num[20];
-    char *p = out;
-    int i;
-    u32dec((uint32_t)pi->id, num);
-    for (i = 0; num[i]; i++);
-    while (i++ < 2) *p++ = ' ';
-    for (i = 0; num[i]; i++) *p++ = num[i];
-    *p++ = ' '; *p++ = ' ';
-    for (i = 0; i < 13 && pi->name[i]; i++) *p++ = pi->name[i];
-    while (i++ < 13) *p++ = ' ';
-    *p++ = ' ';
-    { const char *s = proc_state_name(pi->state); while (*s) *p++ = *s++; }
-    *p++ = ' '; *p++ = ' ';
-    u32dec((uint32_t)pi->ticks, num);
-    for (i = 0; num[i]; i++);
-    while (i++ < 9) *p++ = ' ';
-    for (i = 0; num[i]; i++) *p++ = num[i];
-    *p++ = ' '; *p++ = ' ';
-    { const char *t = (pi->flags & PROC_F_BACKGROUND) ? "background" : "normal    ";
-      while (*t) *p++ = *t++; }
+    *p++ = (char)('0' + (s / 36000) % 10);
+    *p++ = (char)('0' + (s / 3600) % 10);
+    *p++ = ':';
+    *p++ = (char)('0' + (s / 600) % 6);
+    *p++ = (char)('0' + (s / 60) % 10);
+    *p++ = ':';
+    *p++ = (char)('0' + (s / 10) % 6);
+    *p++ = (char)('0' + s % 10);
     *p = 0;
+    uint32_t cx = g_scr_w / 2 - 44;
+    gfx_fill_round_rect(cx, 8, 88, 18, 6, GFX_RGB(0x17, 0x1B, 0x29));
+    gfx_text(cx + 12, 13, buf, C_TXT);
 }
 
-static void draw_taskman(void) {
-    int32_t x = g_tm_x, y = g_tm_y, h = g_tm_h;
-    gfx_fill_rect(x + 4, y + 4, TM_W, h, GFX_RGB(0, 0, 0));          /* тень */
-    gfx_fill_rect(x, y, TM_W, h, COL_WIN_BODY);
-    gfx_fill_rect(x, y, TM_W, WIN_TITLE_H, COL_WIN_BAR);
-    gfx_text(x + 8, y + 9, "AresOS Task Manager [F2]", COL_WIN_BAR_T);
+static void panel_draw(void) {
+    gfx_fill_rect(0, 0, g_scr_w, PANEL_H, C_PANEL);
+    gfx_fill_rect(0, PANEL_H - 1, g_scr_w, 1, C_PLINE);
+    gfx_text_bold(14, 13, "AresOS", C_ACCENT);
+    gfx_fill_round_rect(86, 8, 62, 18, 6, GFX_RGB(0x1B, 0x20, 0x30));
+    gfx_text(94, 13, "v0.5.0", C_TXT2);
+    gfx_text(g_scr_w - 226, 13, "F1 About   F2 Tasks   F3 Logs", C_TXT2);
+    clock_draw();
+}
 
-    /* аптайм справа в заголовке */
-    {
-        char buf[24], num[16];
-        char *p = buf;
-        strcpy_small(p, "up ");
-        p += 3;
-        u32dec((uint32_t)(sched_ticks() / 100), num);
-        strcpy_small(p, num);
-        while (*p) p++;
-        *p++ = ' '; *p++ = 's'; *p = 0;
-        gfx_text(x + TM_W - 96, y + 9, buf, COL_WIN_BAR_T);
+/* ---------------- док ---------------- */
+static uint32_t dock_x(void) { return (g_scr_w - (APP_N * DOCK_STEP + 12)) / 2; }
+static uint32_t dock_y(void) { return g_scr_h - DOCK_H - 12; }
+
+typedef struct { const char *glyph; gfx_color_t col; } icon_t;
+static const icon_t ICONS[APP_N] = {
+    { "i",  GFX_RGB(0x4A, 0x9D, 0xFF) },
+    { "TM", GFX_RGB(0xFF, 0x9E, 0x49) },
+    { ">_", GFX_RGB(0x4F, 0xC3, 0x7B) },
+};
+
+static int dock_hit(int32_t mx, int32_t my) {   /* индекс значка или -1 */
+    uint32_t dx = dock_x(), dy = dock_y();
+    if (my < (int32_t)dy || my >= (int32_t)(dy + DOCK_H)) return -1;
+    for (int i = 0; i < APP_N; i++) {
+        int32_t ix = (int32_t)(dx + 12 + i * DOCK_STEP);
+        if (mx >= ix && mx < ix + DOCK_ICON) return i;
     }
+    return -1;
+}
 
-    /* шапка таблицы (позиции = tm_build_row) */
-    const gfx_color_t HC = GFX_RGB(0x8A, 0x3C, 0x00);
-    int32_t hy = y + WIN_TITLE_H + 10;
-    gfx_fill_rect(x + 8, hy - 2, TM_W - 16, 14, GFX_RGB(0xE6, 0xDF, 0xD3));
-    gfx_text(x + 16,        hy, "id",    HC);
-    gfx_text(x + 16 + 4*8,  hy, "name",  HC);
-    gfx_text(x + 16 + 18*8, hy, "state", HC);
-    gfx_text(x + 16 + 26*8, hy, "ticks", HC);
-    gfx_text(x + 16 + 36*8, hy, "type",  HC);
-
-    /* строки процессов */
-    proc_info_t pi[16];
-    int n = proc_list(pi, 16);
-    int maxrows = (int)((h - WIN_TITLE_H - 44) / 14);
-    if (n > maxrows) n = maxrows;
-    for (int i = 0; i < n; i++) {
-        char row[56];
-        int32_t ry = hy + 16 + i * 14;
-        if (pi[i].state == PROC_RUNNING)
-            gfx_fill_rect(x + 8, ry - 2, TM_W - 16, 13, GFX_RGB(0xFF, 0xDF, 0xBD));
-        tm_build_row(&pi[i], row);
-        gfx_text(x + 16, ry, row, COL_WIN_TXT);
+static void dock_draw(void) {
+    uint32_t dx = dock_x(), dy = dock_y();
+    uint32_t dw = APP_N * DOCK_STEP + 12;
+    gfx_fill_round_rect(dx - 1, dy - 1, dw + 2, DOCK_H + 2, 11, C_DOCK_BR);
+    gfx_fill_round_rect(dx, dy, dw, DOCK_H, 10, C_DOCK);
+    int32_t mx = mouse_x(), my = mouse_y();
+    int hov = dock_hit(mx, my);
+    for (int i = 0; i < APP_N; i++) {
+        uint32_t ix = dx + 12 + (uint32_t)i * DOCK_STEP;
+        uint32_t iy = dy + 7;
+        gfx_color_t c = ICONS[i].col;
+        if (i == hov) {   /* лёгкое «подсвечивание» при наведении */
+            c.r = (uint8_t)(c.r < 220 ? c.r + 35 : 255);
+            c.g = (uint8_t)(c.g < 220 ? c.g + 35 : 255);
+            c.b = (uint8_t)(c.b < 220 ? c.b + 35 : 255);
+        }
+        gfx_fill_round_rect(ix, iy, DOCK_ICON, DOCK_ICON, 8, c);
+        gfx_text_bold(ix + (DOCK_ICON - 8 * 2) / 2 + (ICONS[i].glyph[1] ? 0 : 4),
+                      iy + DOCK_ICON / 2 - 4, ICONS[i].glyph, GFX_RGB(0xFF, 0xFF, 0xFF));
+        if (g_w[i].open)  /* точка «приложение открыто» */
+            gfx_fill_round_rect(ix + DOCK_ICON / 2 - 3, iy + DOCK_ICON + 2, 6, 3, 1, C_TXT2);
     }
-    gfx_text(x + 16, y + h - 16, "F2 close | bg = background daemons",
-             GFX_RGB(0x66, 0x66, 0x77));
-    gfx_frame_rect(x, y, TM_W, h, GFX_RGB(0x0F, 0x14, 0x30));
 }
 
-static void erase_taskman(void) {
-    gfx_gradient_v_rect(g_tm_x, g_tm_y, TM_W + 4, g_tm_h + 4, COL_BG_TOP, COL_BG_BOT);
-    draw_window(&g_win);      /* «About» мог частично прятаться под диспетчером */
-}
-
-/* ------- док: аптайм + последняя клавиша (видно, что клавиатура жива) ------- */
-static uint64_t g_uptime_sec;
-static void draw_uptime(void) {
-    char buf[28], num[16];
-    char *p = buf;
-    strcpy_small(p, "up ");
-    p += 3;
-    u32dec((uint32_t)g_uptime_sec, num);
-    strcpy_small(p, num);
-    while (*p) p++;
-    strcpy_small(p, " s | F2: tasks");
-    gfx_fill_rect(g_scr_w - 262, g_scr_h - 24, 232, 14, COL_PANEL);
-    gfx_text(g_scr_w - 256, g_scr_h - 21, buf, COL_PANEL_TXT);
-}
-
+/* ---------------- нижний правый индикатор ---------------- */
 static int g_last_key = -1;
-static void draw_key_label(void) {
-    char buf[24];
-    char *p = buf;
-    strcpy_small(p, "key=");
-    p += 4;
-    if (g_last_key < 0) {
-        strcpy_small(p, "-");
-    } else if (g_last_key >= KEY_F1 && g_last_key <= KEY_F10) {
+static void key_name(char *out) {
+    char *p = out;
+    int k = g_last_key;
+    if (k < 0) { strcpy_small(out, "-"); return; }
+    if (k >= KEY_F1 && k <= KEY_F10) {
         char num[8];
         *p++ = 'F';
-        u32dec((uint32_t)(g_last_key - KEY_F1 + 1), num);
+        u32dec((uint32_t)(k - KEY_F1 + 1), num);
         strcpy_small(p, num);
-    } else if (g_last_key >= 32 && g_last_key < 127) {
-        *p++ = '\''; *p++ = (char)g_last_key; *p++ = '\''; *p = 0;
-    } else {
-        strcpy_small(p, "(special)");
+        return;
     }
-    gfx_fill_rect(150, g_scr_h - 24, 100, 14, COL_PANEL);
-    gfx_text(154, g_scr_h - 21, buf, COL_PANEL_TXT);
+    if (k >= 32 && k < 127) { *p++ = '\''; *p++ = (char)k; *p++ = '\''; *p = 0; return; }
+    if (k == 27) { strcpy_small(out, "Esc"); return; }
+    strcpy_small(out, "(sp)");
 }
 
-static void draw_screen(void) {
-    gfx_gradient_v_rect(0, 0, g_scr_w, g_scr_h, COL_BG_TOP, COL_BG_BOT);
-    draw_panel();
-    draw_dock();
-    draw_window(&g_win);
+static void pill_draw(void) {
+    char buf[40], num[16];
+    char *p = buf;
+    *p++ = 'x'; *p++ = '=';
+    u32dec((uint32_t)mouse_x(), num); pcat(&p, num);
+    *p++ = ' '; *p++ = 'y'; *p++ = '=';
+    u32dec((uint32_t)mouse_y(), num); pcat(&p, num);
+    *p++ = ' '; *p++ = 'k'; *p++ = '=';
+    key_name(num); pcat(&p, num);
+    gfx_fill_round_rect(g_scr_w - 240, g_scr_h - 30, 206, 20, 6, C_DOCK);
+    gfx_text(g_scr_w - 232, g_scr_h - 24, buf, C_TXT2);
 }
 
-/* ---------------- курсор (XOR-стрелка 12x17) ---------------- */
-static const uint16_t CURSOR[17] = {
+/* ---------------- окна: каркас ---------------- */
+static void draw_content(int app, int32_t x, int32_t y, int32_t w, int32_t h);
+
+static const struct { const char *t; gfx_color_t c; } APP_META[APP_N] = {
+    { "About AresOS",  GFX_RGB(0x4A, 0x9D, 0xFF) },
+    { "Task Manager",  GFX_RGB(0xFF, 0x9E, 0x49) },
+    { "System logs — terminal", GFX_RGB(0x4F, 0xC3, 0x7B) },
+};
+
+static void draw_window(int app) {
+    win_t *W = &g_w[app];
+    int32_t x = W->x, y = W->y, w = W->w, h = W->h;
+    /* тень + рамка + тело */
+    gfx_fill_round_rect(x + 4, y + 5, w, h, 8, C_SHADOW);
+    gfx_fill_round_rect(x - 1, y - 1, w + 2, h + 2, 8, C_WIN_BR);
+    gfx_fill_round_rect(x, y, w, h, 6, C_WIN_BG);
+    /* заголовочная полоса (верх скруглён, низ прямой) */
+    gfx_fill_round_rect(x, y, w, WIN_BAR_H, 6, C_WIN_BAR);
+    gfx_fill_rect(x, y + WIN_BAR_H / 2, w, WIN_BAR_H / 2, C_WIN_BAR);
+    gfx_fill_rect(x, y + WIN_BAR_H, w, 1, C_WIN_BR);
+    /* цветная точка приложения + заголовок */
+    gfx_fill_round_rect(x + 12, y + 9, 12, 12, 3, APP_META[app].c);
+    gfx_text_bold(x + 32, y + 11, APP_META[app].t, C_TXT);
+    /* «traffic lights»: красная = закрыть */
+    gfx_fill_round_rect(x + w - 24, y + 10, 10, 10, 3, C_RED);
+    gfx_fill_round_rect(x + w - 40, y + 10, 10, 10, 3, GFX_RGB(0x3A, 0x41, 0x56));
+    gfx_fill_round_rect(x + w - 56, y + 10, 10, 10, 3, GFX_RGB(0x3A, 0x41, 0x56));
+    draw_content(app, x, y + WIN_BAR_H, w, h - WIN_BAR_H);
+}
+
+/* ---- приложение About ---- */
+static char g_ram_line[48];
+static char g_pe_line[40];
+static void about_draw(int32_t x, int32_t y, int32_t w) {
+    (void)w;
+    int32_t cx = x + 16;
+    int32_t yy = y + 14;
+    gfx_text_bold(cx, yy, "AresOS kernel 0.5.0 (x86-64)", C_TXT); yy += 18;
+    gfx_text(cx, yy, g_ram_line, C_TXT2); yy += 14;
+    gfx_text(cx, yy, "IRQ model: IOAPIC+LAPIC 100 Hz (PIC fallback)", C_TXT2); yy += 14;
+    gfx_text(cx, yy, "Heap/VMM alive, PE32+ loader inside kernel", C_TXT2); yy += 14;
+    if (g_pe_line[0]) { gfx_text(cx, yy, g_pe_line, C_GREEN); yy += 14; }
+    yy += 4;
+    gfx_fill_rect(cx, yy, 240, 1, C_PLINE); yy += 8;
+    gfx_text(cx, yy, "VM tip: click inside the window to", C_ACCENT); yy += 12;
+    gfx_text(cx, yy, "capture the mouse! Ctrl+Arrows =", C_ACCENT); yy += 12;
+    gfx_text(cx, yy, "move cursor by keyboard.", C_ACCENT); yy += 14;
+    gfx_text(cx, yy, "Drag windows by title, Esc closes top.", C_TXT2);
+}
+
+/* ---- приложение Task Manager ---- */
+static uint64_t g_tm_prev_total;
+static uint64_t g_tm_prev[32];
+static uint64_t g_tm_stamp;
+
+static void tm_draw(int32_t x, int32_t y, int32_t w, int32_t h) {
+    int32_t cx = x + 12;
+    int32_t hy = y + 8;
+    /* шапка */
+    gfx_fill_round_rect(cx, hy, w - 24, 16, 4, C_ROW_ALT);
+    const gfx_color_t HC = C_CYAN;
+    gfx_text(cx + 10,        hy + 4, "id",    HC);
+    gfx_text(cx + 10 + 4*8,  hy + 4, "name",  HC);
+    gfx_text(cx + 10 + 18*8, hy + 4, "state", HC);
+    gfx_text(cx + 10 + 25*8, hy + 4, "ticks", HC);
+    gfx_text(cx + 10 + 34*8, hy + 4, "cpu",   HC);
+    gfx_text(cx + 10 + 50*8, hy + 4, "type",  HC);
+
+    uint64_t now = sched_ticks();
+    uint64_t span = now - g_tm_prev_total;
+    g_tm_prev_total = now;
+
+    proc_info_t pi[18];
+    int n = proc_list(pi, 18);
+    int maxrows = (int)((h - 30 - 34) / 13);
+    if (n > maxrows) n = maxrows;
+
+    uint64_t busy = 0;
+    for (int i = 0; i < n; i++) {
+        int32_t ry = hy + 20 + i * 13;
+        if (pi[i].state == PROC_RUNNING)
+            gfx_fill_round_rect(cx, ry - 2, w - 24, 13, 3, GFX_RGB(0x2A, 0x31, 0x20));
+        else if (i & 1)
+            gfx_fill_round_rect(cx, ry - 2, w - 24, 13, 3, C_ROW_ALT);
+
+        char num[16], row[40];
+        char *p = row;
+        /* id */
+        u32dec((uint32_t)pi[i].id, num);
+        if (num[1] == 0) { *p++ = ' '; }
+        pcat(&p, num); *p++ = ' '; *p++ = ' ';
+        /* name (13) */
+        int j;
+        for (j = 0; j < 13 && pi[i].name[j]; j++) *p++ = pi[i].name[j];
+        while (j++ < 13) *p++ = ' ';
+        *p++ = ' ';
+        *p = 0;
+        gfx_text(cx + 10, ry, row, C_TXT);
+
+        /* state (цветной) */
+        gfx_color_t sc = C_TXT2;
+        if (pi[i].state == PROC_RUNNING) sc = C_GREEN;
+        else if (pi[i].state == PROC_READY) sc = C_YELLOW;
+        else if (pi[i].state == PROC_DEAD) sc = C_RED;
+        gfx_text(cx + 10 + 18*8, ry, proc_state_name(pi[i].state), sc);
+
+        /* ticks */
+        char tk[16]; u32dec((uint32_t)pi[i].ticks, tk);
+        gfx_text(cx + 10 + 25*8, ry, tk, C_TERM_LN);
+
+        /* cpu bar (10 символов = 80px) + % */
+        uint64_t dt = pi[i].ticks - g_tm_prev[pi[i].id & 31];
+        g_tm_prev[pi[i].id & 31] = pi[i].ticks;
+        uint32_t pct = span ? (uint32_t)(dt * 100 / span) : 0;
+        if (pct > 100) pct = 100;
+        if (pi[i].id != 0) busy += dt;   /* нагрузка = всё, кроме idle */
+        uint32_t bw = 72;
+        gfx_fill_round_rect(cx + 10 + 34*8, ry + 1, bw, 7, 3, C_BAR_BG);
+        uint32_t fw = bw * pct / 100;
+        if (fw) gfx_fill_round_rect(cx + 10 + 34*8, ry + 1, fw, 7, 3, C_ACCENT);
+        char pc[8]; char *q = pc;
+        u32dec(pct, num); pcat(&q, num); *q++ = '%'; *q = 0;
+        gfx_text(cx + 10 + 34*8 + bw + 8, ry, pc, C_TXT2);
+
+        /* type pill */
+        int bg = pi[i].flags & PROC_F_BACKGROUND;
+        gfx_fill_round_rect(cx + 10 + 50*8, ry - 1, 40, 12, 3, bg ? GFX_RGB(0x1E, 0x33, 0x28) : GFX_RGB(0x1E, 0x29, 0x3D));
+        gfx_text(cx + 10 + 50*8 + 10, ry + 1, bg ? "bg" : "app", bg ? C_GREEN : C_BLUE);
+    }
+    /* нижняя строка: нагрузка */
+    char num[16], line[54];
+    char *p = line;
+    pcat(&p, "procs: "); u32dec((uint32_t)n, num); pcat(&p, num);
+    pcat(&p, "  load: ");
+    uint32_t lp = span ? (uint32_t)(busy * 100 / span) : 0;
+    if (lp > 100) lp = 100;
+    u32dec(lp, num); pcat(&p, num); *p++ = '%'; *p = 0;
+    gfx_text(cx, y + h - 20, line, C_TXT2);
+}
+
+/* ---- приложение Логи ---- */
+static int g_log_scroll;             /* 0 = следим за хвостом */
+static uint64_t g_log_stamp;
+
+static gfx_color_t log_color(const char *s) {
+    if (contains(s, "!!!") || contains(s, "PANIC") || contains(s, "FAIL") ||
+        contains(s, "EXCEPTION")) return C_RED;
+    if (has_prefix(s, "[acpi]") || has_prefix(s, "[lapic]") || has_prefix(s, "[ioapic]")) return C_CYAN;
+    if (has_prefix(s, "[irq]") || has_prefix(s, "[kbd]")  || has_prefix(s, "[mouse]") ||
+        has_prefix(s, "[pic]") || has_prefix(s, "[pit]"))  return C_GREEN;
+    if (has_prefix(s, "[heap]") || has_prefix(s, "[pmm]")  || has_prefix(s, "[vmm]") ||
+        has_prefix(s, "[mem]"))                              return C_PURPLE;
+    if (has_prefix(s, "[proc]") || has_prefix(s, "[m5]")   || has_prefix(s, "[sched]")) return C_ACCENT;
+    if (has_prefix(s, "[taskman]") || has_prefix(s, "[desktop]") || has_prefix(s, "[sysmon]"))
+        return GFX_RGB(0x8F, 0xA3, 0xC8);
+    return C_TERM_LN;
+}
+
+static void logs_draw(int32_t x, int32_t y, int32_t w, int32_t h) {
+    int32_t cx = x + 10;
+    int32_t cy = y + 6;
+    int32_t th = h - 12;
+    gfx_fill_round_rect(cx, cy, w - 20, th, 5, C_TERM_BG);
+    int vis = (th - 8) / TERM_LINE_H;
+    int total = logbuf_count();
+
+    /* кламп скролла */
+    int max_scroll = total - vis;
+    if (max_scroll < 0) max_scroll = 0;
+    if (g_log_scroll > max_scroll) g_log_scroll = max_scroll;
+    int start = total - vis - g_log_scroll;
+    if (start < 0) start = 0;
+
+    for (int i = 0; i < vis; i++) {
+        int li = start + i;
+        if (li >= total) break;
+        const char *s = logbuf_line(li);
+        if (i & 1) gfx_fill_rect(cx + 4, cy + 4 + i * TERM_LINE_H, w - 28, TERM_LINE_H, C_TERM_AL);
+        /* обрезка по ширине окна: макс символов */
+        int maxc = (w - 40) / 8;
+        char clip[LOG_COLS > 128 ? 128 : LOG_COLS + 1];
+        int j = 0;
+        while (s[j] && j < maxc && j < (int)sizeof(clip) - 1) { clip[j] = s[j]; j++; }
+        clip[j] = 0;
+        gfx_text(cx + 8, cy + 5 + i * TERM_LINE_H, clip, log_color(s));
+    }
+
+    /* скроллбар */
+    if (total > vis) {
+        int32_t sbx = cx + w - 26;
+        int32_t sbh = th - 8;
+        gfx_fill_round_rect(sbx, cy + 4, 4, sbh, 2, GFX_RGB(0x1C, 0x22, 0x32));
+        int32_t thumb_h = sbh * vis / total;
+        if (thumb_h < 8) thumb_h = 8;
+        int32_t thumb_y = cy + 4 + (sbh - thumb_h) * (total - vis - g_log_scroll) / (total - vis);
+        gfx_fill_round_rect(sbx, thumb_y, 4, thumb_h, 2, C_CYAN);
+    }
+    /* подсказка */
+    char info[48], num[16];
+    char *p = info;
+    pcat(&p, "lines: ");
+    u32dec((uint32_t)total, num); pcat(&p, num);
+    pcat(&p, g_log_scroll ? "  (Up/Down/PgUp/PgDn scroll)" : "  (live tail)");
+    gfx_text(cx + 4, y + 2, info, C_TXT2);
+}
+
+/* контент-диспетчер */
+static void draw_content(int app, int32_t x, int32_t y, int32_t w, int32_t h) {
+    switch (app) {
+    case APP_ABOUT:   about_draw(x, y, w); break;
+    case APP_TASKMAN: tm_draw(x, y, w, h); break;
+    case APP_LOGS:    logs_draw(x, y, w, h); break;
+    }
+}
+
+/* ---------------- курсор (save/restore, двухцветный) ---------------- */
+static const uint16_t ARROW[17] = {
     0b000000000001, 0b000000000011, 0b000000000101, 0b000000001001,
     0b000000010001, 0b000000100001, 0b000001000001, 0b000010000001,
     0b000100000001, 0b001000000001, 0b011111100001, 0b000100100101,
     0b000010101001, 0b000010100011, 0b000010100001, 0b000010100000,
     0b000011000000,
 };
+#define CURW 14
+#define CURH 19
+static uint32_t g_cur_save[CURW * CURH];    /* packed-пиксели под курсором */
+static int      g_cur_on;
+static int32_t  g_cur_x, g_cur_y;
 
-static int g_cur_on;
-static int32_t g_cur_x, g_cur_y;
-
-static void cursor_flip(int32_t x, int32_t y) {
-    /* XOR-белым: вызов поверх старого положения = стирание */
-    for (uint32_t row = 0; row < 17; row++)
-        for (uint32_t col = 0; col < 12; col++)
-            if ((CURSOR[row] >> col) & 1)
-                gfx_pixel_xor(x + col, y + row, 1);
+static void cursor_hide(void) {
+    if (!g_cur_on) return;
+    for (int32_t r = 0; r < CURH; r++)
+        for (int32_t c = 0; c < CURW; c++) {
+            int32_t x = g_cur_x + c, y = g_cur_y + r;
+            if (x >= 0 && y >= 0 && (uint32_t)x < g_scr_w && (uint32_t)y < g_scr_h)
+                gfx_poke((uint32_t)x, (uint32_t)y, g_cur_save[r * CURW + c]);
+        }
+    g_cur_on = 0;
+}
+static void cursor_show(int32_t x, int32_t y) {
+    if (g_cur_on) cursor_hide();
+    /* сохранить фон под стрелкой */
+    for (int32_t r = 0; r < CURH; r++)
+        for (int32_t c = 0; c < CURW; c++) {
+            int32_t px = x + c, py = y + r;
+            g_cur_save[r * CURW + c] =
+                (px >= 0 && py >= 0 && (uint32_t)px < g_scr_w && (uint32_t)py < g_scr_h)
+                ? gfx_peek((uint32_t)px, (uint32_t)py) : 0;
+        }
+    g_cur_x = x; g_cur_y = y; g_cur_on = 1;
+    /* чёрный контур */
+    for (int32_t r = 0; r < 17; r++)
+        for (int32_t c = 0; c < 12; c++)
+            if ((ARROW[r] >> c) & 1)
+                gfx_pixel((uint32_t)(x + c), (uint32_t)(y + r), GFX_RGB(0x00, 0x00, 0x00));
+    /* белое тело (та же маска со сдвигом +1,+1 → классическая заливка) */
+    for (int32_t r = 0; r < 16; r++)
+        for (int32_t c = 0; c < 11; c++)
+            if ((ARROW[r] >> c) & 1)
+                gfx_pixel((uint32_t)(x + c + 1), (uint32_t)(y + r + 1), GFX_RGB(0xFF, 0xFF, 0xFF));
 }
 
-/* ---------------- десктоп ---------------- */
-static uint8_t g_buttons_old;
-
-static void strcpy_small(char *dst, const char *src) {
-    while ((*dst++ = *src++)) {}
+/* ---------------- PE-призрак: квадрат, который нарисовал TESTPE.EXE ----------------
+ * EXE рисует однажды при старте; после перерисовок мира рисуем за него
+ * тот же узор (персистентные поверхности приложений — это уже этап M6+). */
+static int g_pe_ok;
+static void pe_ghost(void) {
+    if (!g_pe_ok) return;
+    uint32_t x0 = (g_scr_w * 3) / 4 - 32;
+    uint32_t y0 = (g_scr_h * 2) / 3 - 32;
+    for (uint32_t dy = 0; dy < 96; dy += 12)
+        for (uint32_t dx = 0; dx < 96; dx += 12) {
+            gfx_color_t c = (((dx / 12) + (dy / 12)) & 1)
+                          ? GFX_RGB(0x28, 0x2C, 0x48) : GFX_RGB(0xFF, 0x9E, 0x49);
+            gfx_fill_rect(x0 + dx, y0 + dy, 12, 12, c);
+        }
 }
-static void u32dec(uint32_t v, char *out) {
-    char tmp[16]; int i = 0;
-    if (!v) { out[0] = '0'; out[1] = 0; return; }
-    while (v) { tmp[i++] = '0' + v % 10; v /= 10; }
-    int j = 0;
-    while (i) out[j++] = tmp[--i];
-    out[j] = 0;
+
+/* ---------------- мир ---------------- */
+static void world_draw(void) {
+    gfx_blit_rows(g_bg);
+    pe_ghost();
+    panel_draw();
+    dock_draw();
+    for (int i = 0; i < APP_N; i++)
+        if (g_w[g_z[i]].open) draw_window(g_z[i]);
+    pill_draw();
+    clock_draw();
 }
 
+/* ---------------- вход и главный цикл ---------------- */
 __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
                                              uint64_t total_mib,
                                              uint64_t free_mib) {
     gfx_init(&bi->fb);
-    if (!gfx_ready()) {
+    if (!gfx_ready())
         kpanic("desktop: no framebuffer");
-    }
     g_scr_w = gfx_width();
     g_scr_h = gfx_height();
     mouse_set_limits(g_scr_w, g_scr_h);
 
-    /* тексты окна */
-    strcpy_small(g_win.l1, "Kernel 0.4.0 (x86-64)");
+    /* кэш строк обоев + геометрия окон */
+    g_bg = (uint32_t *)kmalloc(g_scr_h * sizeof(uint32_t));
+    if (!g_bg) kpanic("desktop: no mem for wallpaper cache");
+    bg_cache_build();
+
+    g_w[APP_ABOUT].x = 48;  g_w[APP_ABOUT].y = 92;  g_w[APP_ABOUT].w = 448; g_w[APP_ABOUT].h = 236;
+    g_w[APP_TASKMAN].x = 262; g_w[APP_TASKMAN].y = 64; g_w[APP_TASKMAN].w = 560; g_w[APP_TASKMAN].h = 372;
+    g_w[APP_LOGS].x = 190;  g_w[APP_LOGS].y = 78;   g_w[APP_LOGS].w = 640; g_w[APP_LOGS].h = 392;
+
+    /* статичные строки About */
     {
-        char buf[48];
-        char num[16];
-        u32dec((uint32_t)total_mib, num);
-        strcpy_small(buf, "RAM usable: ");
-        char *p = buf;
-        while (*p) p++;
-        strcpy_small(p, num);
-        while (*p) p++;
-        strcpy_small(p, " MiB");
-        strcpy_small(g_win.l2, buf);
+        char num[16]; char *p = g_ram_line;
+        pcat(&p, "RAM total ");
+        u32dec((uint32_t)total_mib, num); pcat(&p, num);
+        pcat(&p, " MiB · free ");
+        u32dec((uint32_t)free_mib, num); pcat(&p, num);
+        pcat(&p, " MiB");
     }
-    {
-        char buf[48], num[16];
-        u32dec((uint32_t)free_mib, num);
-        strcpy_small(buf, "RAM free:   ");
-        char *p = buf + 12; strcpy_small(p, num); while (*p) p++;
-        strcpy_small(p, " MiB (bitmap PMM)");
-        strcpy_small(g_win.l3, buf);
-    }
-    strcpy_small(g_win.l4, "Mouse+KBD: PS/2, timer: LAPIC/PIT 100Hz");
+    g_pe_line[0] = 0;
 
-    strcpy_small(g_win.l5, "F2: Task Manager | drag window");
+    /* стартовое состояние: открыт About */
+    g_w[APP_ABOUT].open = 1;
+    app_raise(APP_ABOUT);
+    world_draw();
+    kprintf("[desktop] %lux%lu modern UI up; F1/F2/F3 or dock clicks\n", g_scr_w, g_scr_h);
 
-    g_win.w = 400;
-    g_win.h = WIN_TITLE_H + 126;
-    g_win.x = (int32_t)(g_scr_w > 400 ? (g_scr_w - 400) / 2 : 0);
-    g_win.y = (int32_t)(g_scr_h > 220 ? (g_scr_h - 220) / 2 : 0);
-    g_win.l6[0] = 0;
-
-    taskman_geom();
-    g_uptime_sec = 0;
-    draw_screen();
-    draw_uptime();
-    draw_key_label();
-    kprintf("[desktop] %lux%lu ready; window drag enabled, F2=TaskManager\n", g_scr_w, g_scr_h);
-
-    /* ===== M3: запуск TESTPE.EXE через PE-загрузчик ядра =====
-     * Квадрат рисуется ПОСЛЕ обоев — иначе градиент его сотрёт. */
+    /* PE-демо (M3): запускаем ПОСЛЕ первой отрисовки — квадрат рисует сам EXE */
     {
         int ret = pe_demo_run();
-        static const char hex[] = "0123456789ABCDEF";
-        char *p = g_win.l6;
-        if ((uint32_t)ret == ARES_PE_TEST_OK) {
-            strcpy_small(g_win.l6, "PE test: OK (ret=0xA2E5)");
+        char *p = g_pe_line;
+        g_pe_ok = ((uint32_t)ret == ARES_PE_TEST_OK);
+        if (g_pe_ok) {
+            strcpy_small(g_pe_line, "PE test: OK (ret=0xA2E5)");
         } else {
-            strcpy_small(g_win.l6, "PE test: FAIL ret=");
-            while (*p) p++;
-            uint32_t v = (uint32_t)ret;
-            *p++ = v & 0x80000000u ? '-' : '0';
-            if (!(v & 0x80000000u)) {
-                for (int i = 28; i >= 0; i -= 4) *p++ = hex[(v >> i) & 0xF];
-            } else {
-                v = (uint32_t)(-(int32_t)v);
-                for (int i = 28; i >= 4; i -= 4) *p++ = hex[(v >> i) & 0xF];
-            }
-            *p = 0;
+            pcat(&p, "PE test: FAIL ret=");
+            char num[16]; u32dec((uint32_t)(-(int32_t)ret), num);
+            if (ret < 0) *p++ = '-';
+            pcat(&p, num);
         }
-        draw_window(&g_win);   /* обновить окно: появилась строка l6 */
+        world_draw();   /* перерисуем: строка About + квадрат TESTPE.EXE виден */
     }
 
-    /* включить прерывания: PIC запрограммирован, мышь ARM-нута */
-    __asm__ volatile ("sti");
-
-    int dragging = 0;
-    int32_t drag_dx = 0, drag_dy = 0;
+    /* включить курсор */
     g_cur_x = mouse_x(); g_cur_y = mouse_y();
-    cursor_flip(g_cur_x, g_cur_y);
-    g_cur_on = 1;
+    cursor_show(g_cur_x, g_cur_y);
+
+    int btn_old = mouse_left();
+    int drag_app = -1;
+    int32_t drag_dx = 0, drag_dy = 0;
 
     for (;;) {
+        int need_world = 0, tm_dirty = 0, log_dirty = 0, aux_dirty = 0;
+
+        /* ===== клавиатура ===== */
+        int k;
+        while ((k = keyboard_getch()) >= 0) {
+            g_last_key = k;
+            aux_dirty = 1;
+            switch (k) {
+            case KEY_F1: app_toggle(APP_ABOUT);   need_world = 1; break;
+            case KEY_F2: app_toggle(APP_TASKMAN); need_world = 1; break;
+            case KEY_F3: app_toggle(APP_LOGS);    need_world = 1; break;
+            case 27: { int t = app_top();         /* Esc — закрыть верхнее */
+                if (t >= 0) { g_w[t].open = 0; need_world = 1; }
+                break; }
+            case KEY_UP:
+                if (g_w[APP_LOGS].open) { g_log_scroll += 1; log_dirty = 1; }
+                break;
+            case KEY_DOWN:
+                if (g_w[APP_LOGS].open) { if (g_log_scroll > 0) g_log_scroll--; log_dirty = 1; }
+                break;
+            case KEY_PGUP:
+                if (g_w[APP_LOGS].open) { g_log_scroll += 20; log_dirty = 1; }
+                break;
+            case KEY_PGDN:
+                if (g_w[APP_LOGS].open) {
+                    g_log_scroll -= 20;
+                    if (g_log_scroll < 0) g_log_scroll = 0;
+                    log_dirty = 1;
+                }
+                break;
+            case KEY_MLEFT:  mouse_nudge(-14, 0); break;
+            case KEY_MRIGHT: mouse_nudge(14, 0);  break;
+            case KEY_MUP:    mouse_nudge(0, -14); break;
+            case KEY_MDOWN:  mouse_nudge(0, 14);  break;
+            default: break;
+            }
+        }
+
+        /* ===== мышь ===== */
         int moved = mouse_moved();
         int left = mouse_left();
+        int pressed = left && !btn_old;
 
-        /* ---- клавиатура (M4): разбираем очередь нажатий ---- */
-        {
-            int k;
-            int kd = 0;
-            while ((k = keyboard_getch()) >= 0) {
-                g_last_key = k;
-                kd = 1;
-                if (k == KEY_F2) {
-                    if (g_cur_on) cursor_flip(g_cur_x, g_cur_y);
-                    g_taskman ^= 1;
-                    if (g_taskman) {
-                        draw_taskman();
-                        kprintf("[taskman] open (процессов в списке)\n");
-                    } else {
-                        erase_taskman();
-                        kprintf("[taskman] closed\n");
-                    }
-                    cursor_flip(g_cur_x, g_cur_y);
-                    g_cur_on = 1;
-                    g_tm_stamp = sched_ticks();
-                }
-            }
-            if (kd) draw_key_label();
-        }
-
-        if (!dragging && left && !(g_buttons_old & 1)) {
-            /* нажатие: попали в заголовок окна? */
+        if (pressed) {
             int32_t mx = mouse_x(), my = mouse_y();
-            if (mx >= g_win.x && mx < g_win.x + g_win.w &&
-                my >= g_win.y && my < g_win.y + WIN_TITLE_H) {
-                dragging = 1;
-                drag_dx = mx - g_win.x;
-                drag_dy = my - g_win.y;
-            }
-        }
-        if (dragging && !left) dragging = 0;
-
-        if (moved || dragging) {
-            int32_t nx = mouse_x(), ny = mouse_y();
-
-            /* перерисовать курсор: стереть старый */
-            if (g_cur_on) cursor_flip(g_cur_x, g_cur_y);
-
-            if (dragging) {
-                int32_t wx = nx - drag_dx;
-                int32_t wy = ny - drag_dy;
-                if (wy < PANEL_H) wy = PANEL_H;
-                if (wy > (int32_t)g_scr_h - DOCK_H - 20) wy = (int32_t)g_scr_h - DOCK_H - 20;
-                if (wx < 0) wx = 0;
-                if (wx > (int32_t)g_scr_w - 60) wx = (int32_t)g_scr_w - 60;
-                if (wx != g_win.x || wy != g_win.y) {
-                    erase_window(&g_win);
-                    g_win.x = wx;
-                    g_win.y = wy;
-                    draw_window(&g_win);
+            int hit = -1, topmost = -1;
+            /* окна сверху вниз */
+            for (int i = APP_N - 1; i >= 0; i--) {
+                int a = g_z[i];
+                if (!g_w[a].open) continue;
+                win_t *W = &g_w[a];
+                if (mx >= W->x && mx < W->x + W->w && my >= W->y && my < W->y + W->h) {
+                    topmost = a;
+                    break;
                 }
             }
-
-            cursor_flip(nx, ny);
-            g_cur_x = nx; g_cur_y = ny; g_cur_on = 1;
-        }
-
-        g_buttons_old = (uint8_t)left;
-
-        /* v0.3.4: статус мыши — в панель, а не спамом в консоль */
-        {
-            static uint32_t last_irq = 0;
-            uint32_t c = mouse_irq_count();
-            if (c != last_irq) {
-                if (!last_irq)
-                    kprintf("[mouse] IRQ12 живы — CS-фикс v0.3.3 победил (дальше молчу)\n");
-                last_irq = c;
-                draw_mouse_status();
+            if (topmost >= 0) {
+                win_t *W = &g_w[topmost];
+                app_raise(topmost);
+                need_world = 1;
+                /* красная точка → закрыть */
+                if (mx >= W->x + W->w - 28 && mx < W->x + W->w - 8 &&
+                    my >= W->y + 6 && my < W->y + 26) {
+                    W->open = 0;
+                    kprintf("[desktop] window %d closed\n", topmost);
+                } else if (my < W->y + WIN_BAR_H) {
+                    drag_app = topmost;
+                    drag_dx = mx - W->x;
+                    drag_dy = my - W->y;
+                }
+            } else if ((hit = dock_hit(mx, my)) >= 0) {
+                app_toggle(hit);
+                need_world = 1;
+                kprintf("[desktop] dock toggle app %d\n", hit);
             }
         }
 
-        if (moved)
-            draw_mouse_status();
+        if (drag_app >= 0) {
+            if (!left) {
+                drag_app = -1;
+            } else if (moved) {
+                win_t *W = &g_w[drag_app];
+                int32_t nx = mouse_x() - drag_dx;
+                int32_t ny = mouse_y() - drag_dy;
+                if (ny < PANEL_H + 2) ny = PANEL_H + 2;
+                if (ny > (int32_t)g_scr_h - 40) ny = (int32_t)g_scr_h - 40;
+                if (nx < -W->w + 80) nx = -W->w + 80;
+                if (nx > (int32_t)g_scr_w - 80) nx = (int32_t)g_scr_w - 80;
+                if (nx != W->x || ny != W->y) {
+                    W->x = nx; W->y = ny;
+                    need_world = 1;
+                }
+            }
+        }
 
-        /* ---- M5: живой диспетчер задач + аптайм в доке ---- */
+        /* ===== периодика ===== */
         {
             uint64_t t = sched_ticks();
-            if (g_taskman && t - g_tm_stamp >= 25) {      /* 4 раза/сек */
-                g_tm_stamp = t;
-                if (g_cur_on) cursor_flip(g_cur_x, g_cur_y);
-                draw_taskman();
-                cursor_flip(g_cur_x, g_cur_y);
-                g_cur_on = 1;
+            uint64_t sec = t / 100;
+            if (sec != g_last_sec) {
+                g_last_sec = sec;
+                aux_dirty = 1;                                     /* часы */
+                if (g_w[APP_LOGS].open && g_log_scroll == 0) log_dirty = 1;
             }
-            if (t / 100 != g_uptime_sec) {
-                g_uptime_sec = t / 100;
-                draw_uptime();
+            if (g_w[APP_TASKMAN].open && t - g_tm_stamp >= TM_REFRESH) {
+                g_tm_stamp = t;
+                tm_dirty = 1;
+            }
+            if (g_w[APP_LOGS].open && t - g_log_stamp >= 50 && g_log_scroll == 0) {
+                g_log_stamp = t;
+                log_dirty = 1;
             }
         }
 
-        __asm__ volatile ("hlt");   /* таймер 100 Гц / IRQ12 / IRQ1 нас разбудят */
+        /* ===== отрисовка одним батчем (курсор прячем на время) ===== */
+        /* окно можно перерисовать прямо только если оно ВЕРХНЕЕ —
+         * иначе зальёт чужие окна → тогда перерисовываем весь мир */
+        if (tm_dirty && app_top() != APP_TASKMAN) need_world = 1;
+        if (log_dirty && app_top() != APP_LOGS)   need_world = 1;
+        /* пилюля в углу может быть под окном → тоже через мир */
+        if ((moved || aux_dirty) && !need_world) {
+            for (int i = 0; i < APP_N; i++)
+                if (g_w[i].open &&
+                    g_w[i].x + g_w[i].w > (int32_t)g_scr_w - 240 &&
+                    g_w[i].y + g_w[i].h > (int32_t)g_scr_h - 34)
+                    need_world = 1;
+        }
+
+        if (need_world || tm_dirty || log_dirty || aux_dirty || moved) {
+            cursor_hide();
+            if (need_world) {
+                world_draw();
+            } else {
+                if (tm_dirty)  draw_window(APP_TASKMAN);
+                if (log_dirty) draw_window(APP_LOGS);
+                if (aux_dirty) { clock_draw(); pill_draw(); }
+                if (moved)     pill_draw();
+            }
+            cursor_show(mouse_x(), mouse_y());
+        }
+
+        btn_old = left;
+        __asm__ volatile ("hlt");   /* разбудит таймер 100 Гц / IRQ1 / IRQ12 */
     }
 }

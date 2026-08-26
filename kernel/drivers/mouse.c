@@ -104,6 +104,16 @@ void mouse_irq_handler(void) {
     }
 }
 
+void mouse_nudge(int dx, int dy) {
+    g_x += dx;
+    g_y += dy;
+    if (g_x < 0) g_x = 0;
+    if (g_y < 0) g_y = 0;
+    if (g_x > g_max_x) g_x = g_max_x;
+    if (g_y > g_max_y) g_y = g_max_y;
+    g_moved = 1;
+}
+
 int32_t mouse_x(void) { return g_x; }
 int32_t mouse_y(void) { return g_y; }
 int     mouse_left(void) { return g_left; }

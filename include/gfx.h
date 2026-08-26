@@ -23,5 +23,15 @@ void gfx_frame_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, gfx_color_t 
 /* текст 8x8 из font8x8 */
 void gfx_text(uint32_t x, uint32_t y, const char *s, gfx_color_t fg);
 void gfx_text_shadow(uint32_t x, uint32_t y, const char *s, gfx_color_t fg, gfx_color_t shadow);
+/* v0.5.0: современный UI */
+void gfx_text_bold(uint32_t x, uint32_t y, const char *s, gfx_color_t fg);
+void gfx_fill_round_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t r, gfx_color_t c);
+uint32_t gfx_pack(gfx_color_t c);   /* упаковка цвета в пиксель fb */
+/* v0.5.0: быстрая заливка обоев из кэша упакованных цветов по строкам */
+void gfx_blit_rows(const uint32_t *rowpx);
+void gfx_blit_rows_region(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint32_t *rowpx);
+/* packed доступ к одному пикселю (для save/restore курсора) */
+uint32_t gfx_peek(uint32_t x, uint32_t y);
+void     gfx_poke(uint32_t x, uint32_t y, uint32_t packed);
 
 #endif

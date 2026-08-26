@@ -100,3 +100,56 @@ void gfx_text_shadow(uint32_t x, uint32_t y, const char *s, gfx_color_t fg, gfx_
     gfx_text(x + 1, y + 1, s, shadow);
     gfx_text(x, y, s, fg);
 }
+
+/* v0.5.0: «жирный» текст — два прохода со сдвигом на 1px */
+void gfx_text_bold(uint32_t x, uint32_t y, const char *s, gfx_color_t fg) {
+    gfx_text(x, y, s, fg);
+    gfx_text(x + 1, y, s, fg);
+}
+
+uint32_t gfx_pack(gfx_color_t c) { return pack(c); }
+
+/* обои из кэша: весь экран / прямоугольник — прямые записи packed-пикселей */
+void gfx_blit_rows_region(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                           const uint32_t *rowpx) {
+    if (!g_ready) return;
+    if (x + w > g_fb.width)  w = (x < g_fb.width)  ? g_fb.width - x : 0;
+    if (y + h > g_fb.height) h = (y < g_fb.height) ? g_fb.height - y : 0;
+    for (uint32_t r = 0; r < h; r++) {
+        uint32_t px = rowpx[y + r];
+        uint32_t *line = fbp() + (uint64_t)(y + r) * g_fb.pitch;
+        for (uint32_t col = 0; col < w; col++) line[x + col] = px;
+    }
+}
+void gfx_blit_rows(const uint32_t *rowpx) {
+    gfx_blit_rows_region(0, 0, g_fb.width, g_fb.height, rowpx);
+}
+
+uint32_t gfx_peek(uint32_t x, uint32_t y) {
+    if (!g_ready || x >= g_fb.width || y >= g_fb.height) return 0;
+    return fbp()[(uint64_t)y * g_fb.pitch + x];
+}
+void gfx_poke(uint32_t x, uint32_t y, uint32_t packed) {
+    if (!g_ready || x >= g_fb.width || y >= g_fb.height) return;
+    fbp()[(uint64_t)y * g_fb.pitch + x] = packed;
+}
+
+/* прямоугольник со скруглёнными углами: k-я полоса от края имеет inset RIN[r][k].
+ * Стороны не перерисовываются: середина + r верхних/нижних полос = ровно h строк. */
+static const int8_t RIN[7][6] = {
+    {0}, {0},
+    {1,0}, {2,1,0}, {3,1,0,0}, {4,2,1,0,0}, {5,3,2,1,0,0},
+};
+void gfx_fill_round_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                          uint32_t r, gfx_color_t c) {
+    if (r > 6) r = 6;
+    if (r > h / 2) r = h / 2;
+    if (r > w / 2) r = w / 2;
+    if (h > 2 * r)
+        gfx_fill_rect(x, y + r, w, h - 2 * r, c);
+    for (uint32_t k = 0; k < r; k++) {
+        uint32_t ins = (uint32_t)RIN[r][k];
+        gfx_fill_rect(x + ins, y + k,         w - 2 * ins, 1, c);
+        gfx_fill_rect(x + ins, y + h - 1 - k, w - 2 * ins, 1, c);
+    }
+}

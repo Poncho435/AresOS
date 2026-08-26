@@ -4,6 +4,7 @@
 #include "kprintf.h"
 #include "serial.h"
 #include "fb_console.h"
+#include "logbuf.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -11,6 +12,7 @@
 static void emit(char c) {
     serial_putc(c);
     if (fb_console_ready()) fb_console_putc(c);
+    logbuf_putc(c);   /* v0.5.0: журнал в память — показываем приложением «Логи» */
 }
 
 static void emit_str(const char *s) {

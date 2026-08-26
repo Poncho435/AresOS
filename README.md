@@ -29,29 +29,39 @@ make debug         # + GDB-stub на :1234, далее `make gdb`
 
 Требования: `gcc`, `make`, `python3`, `qemu-system-x86`, `ovmf` (подробности — [docs/SETUP.md](docs/SETUP.md)).
 
-## Запуск (v0.4.0 — M4+M5: прерывания, таймер, многозадачность)
+## Запуск (v0.5.0 — современный UI, приложение «Логи», клавиатурная мышь)
 
 **VirtualBox — самый простой путь:**
-**[dist/aresos-vm-v0.4.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-vm-v0.4.0.zip)**
+**[dist/aresos-vm-v0.5.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-vm-v0.5.0.zip)**
 → распаковать → ВМ (Other 64-bit, 256 МБ, ✔EFI) → в «Носителях» к SATA прикрепить файл
 `aresos.vmdk` → Запустить. Никакой командной строки!
 
 **Реальное железо (флешка):**
-**[dist/aresos-usb-v0.4.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-usb-v0.4.0.zip)**
+**[dist/aresos-usb-v0.5.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-usb-v0.5.0.zip)**
 → `aresos.img` на флешку (balenaEtcher / Rufus DD) → Boot Menu → «UEFI: флешка».
 Пошагово: [docs/REALHARDWARE.md](docs/REALHARDWARE.md).
 
 **ISO для CD-привода (виртуалки):**
-**[dist/aresos-iso-v0.4.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-iso-v0.4.0.zip)**
+**[dist/aresos-iso-v0.5.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-iso-v0.5.0.zip)**
 → новая ВМ без жёсткого диска → прикрепить `aresos.iso` к CD-приводу → Запустить.
 
-> v0.4.0 — этапы **M4 + M5** закрыты: ядро находит ACPI/MADT через EFI,
+> **Управление на рабочем столе:** мышь (кликни в окно ВМ для захвата!),
+> значки дока открывают приложения; **F1** — About, **F2** — Диспетчер задач,
+> **F3** — Логи; **Esc** закрывает верхнее окно; ↑/↓/PgUp/PgDn — прокрутка логов;
+> **Ctrl+стрелки** — движение курсора с клавиатуры (если мышь в ВМ застряла).
+>
+> v0.5.0 — новый тёмный интерфейс «midnight aurora»: плавающий док со
+> значками, окна со z-порядком и перетаскиванием, скругления, часы в панели,
+> диспетчер задач с барами загрузки CPU, **все логи ядра перенесены в
+> отдельное приложение «Логи»** (цветной терминал, прокрутка), курсор
+> двухцветный через save/restore, клавиатурная мышь Ctrl+стрелки.
+>
+> Внутри (v0.4.0): этапы **M4 + M5** закрыты — ядро находит ACPI/MADT через EFI,
 > маршрутизирует клавиатуру и мышь через IOAPIC (с автоматическим откатом
 > на legacy PIC/PIT), системный тик 100 Гц от LAPIC-таймера (калибровка по
-> PIT), клавиатура PS/2 (scancode→ASCII, F1..F10, стрелки), планировщик
-> round-robin с вытеснением тиком (ядровые потоки на отдельных стеках),
-> фоновые демоны heartbeat/sysmon, **диспетчер задач по F2** — список
-> процессов с состояниями и тиками CPU прямо на рабочем столе.
+> PIT), клавиатура PS/2 (scancode→ASCII, F1..F10, стрелки, Ctrl, PgUp/PgDn),
+> планировщик round-robin с вытеснением тиком (ядровые потоки на отдельных
+> стеках), фоновые демоны heartbeat/sysmon.
 > Плюс всё из v0.3.x: свои таблицы страниц + heap (стресс 1M операций),
 > запуск настоящего PE32+ TESTPE.EXE, живая мышь (фикс CS после lgdt).
 

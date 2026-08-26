@@ -62,7 +62,7 @@ static void print_memory_summary(const bootinfo_t *bi) {
     kprintf("[mem] usable RAM total: %lu MiB\n", usable >> 20);
 }
 
-#define KERNEL_VERSION "0.4.0"
+#define KERNEL_VERSION "0.5.0"
 
 /* ---- фоновые демоны M5 (диспетчер задач покажет их в списке) ---- */
 #include "gfx.h"
@@ -71,9 +71,9 @@ static void heartbeat_proc(void *arg) {
     (void)arg;
     int on = 0;
     for (;;) {
-        /* мигающий огонёк в доке справа — видно, что фоновый поток живёт */
-        uint32_t x = gfx_width() - 24, y = gfx_height() - 30;
-        gfx_fill_rect(x, y, 12, 12, on ? GFX_RGB(0xFF, 0x9E, 0x49) : GFX_RGB(0x33, 0x36, 0x44));
+        /* мигающий огонёк в правом нижнем углу (правее пилюли со статусом) */
+        uint32_t x = gfx_width() - 20, y = gfx_height() - 28;
+        gfx_fill_rect(x, y, 11, 11, on ? GFX_RGB(0xFF, 0x9E, 0x49) : GFX_RGB(0x28, 0x2C, 0x40));
         on ^= 1;
         proc_sleep(500);
     }
