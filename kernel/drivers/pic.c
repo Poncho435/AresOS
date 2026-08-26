@@ -36,6 +36,11 @@ void pic_set_mask(uint8_t master, uint8_t slave) {
     outb(PIC2_DATA, slave);
 }
 
+void pic_get_mask(uint8_t *master, uint8_t *slave) {
+    *master = inb(PIC1_DATA);
+    *slave  = inb(PIC2_DATA);
+}
+
 void pic_eoi(int vector) {
     if (vector >= 0x28)
         outb(PIC2_CMD, PIC_EOI_CMD);   /* IRQ8..15 живут на slave */

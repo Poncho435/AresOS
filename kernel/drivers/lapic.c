@@ -77,7 +77,7 @@ int lapic_init(void) {
     for (int t = 0; t < 2; t++) {
         lwr(L_TMRINIT, 0xFFFFFFFF);
         uint32_t start = lrd(L_TMRCUR);
-        if (!pit_one_shot_50ms()) { kprintf("[lapic] PIT ch2 не ответил - откат на PIC\n"); return 0; }
+        if (!pit_one_shot_50ms()) { kprintf("[lapic] PIT ch2 не ответил - откат на PIC\n"); lapic_fallback_off(); return 0; }
         delta[t] = start - lrd(L_TMRCUR);
         lwr(L_TMRINIT, 0);
     }
@@ -87,17 +87,20 @@ int lapic_init(void) {
     uint32_t diff = delta[0] > delta[1] ? delta[0] - delta[1] : delta[1] - delta[0];
     if (d < 20000 || d > 100000000u) {
         kprintf("[lapic] замер вне диапазона (delta=%lu) - откат на PIC\n", (uint64_t)d);
+        lapic_fallback_off();
         return 0;
     }
     if (diff > d / 20) {
         kprintf("[lapic] два замера разошлись (%lu vs %lu) - LAPIC таймеру"
                 " в этой VM верить нельзя, откат на PIC\n",
                 (uint64_t)delta[0], (uint64_t)delta[1]);
+        lapic_fallback_off();
         return 0;
     }
     uint32_t per_10ms = d / 5;       /* 50 мс -> 10 мс (100 Гц) */
     if (per_10ms < 4000) {           /* ~>25 МГц после /16 - чушь для bus clock */
         kprintf("[lapic] per_10ms=%lu слишком мал - откат на PIC\n", (uint64_t)per_10ms);
+        lapic_fallback_off();
         return 0;
     }
     lwr(L_LVT_TMR, TIMER_VECTOR | 0x20000);   /* periodic */
@@ -111,6 +114,24 @@ int lapic_init(void) {
 
 int  lapic_active(void) { return g_active; }
 void lapic_eoi(void)    { if (g_lapic) lwr(L_EOI, 0); }
+
+/* Откат на legacy PIC (8259) при неудачной калибровке LAPIC.
+ * КРИТИЧНО: LAPIC обязан уснуть! Иначе включённый LAPIC с замаскированным
+ * LINT0 перехватывает линию INTR процессора - и ни таймер PIT, ни клавиатура,
+ * ни мышь от 8259 до CPU НИКОГДА не доходят: система вечно спит в hlt
+ * (баг по фото пользователя: [m5] scheduler ON - и тишина, ни одного тика).
+ * SVR бит 8 = 0 это software-disable: INTR/NMI снова идут напрямую от PIC. */
+void lapic_fallback_off(void) {
+    if (!g_lapic) return;
+    lwr(L_TMRINIT, 0);
+    lwr(L_LVT_TMR,   0x10000);   /* LVT-таймер masked */
+    lwr(L_LVT_LINT0, 0x10000);   /* LINT0 masked */
+    lwr(L_LVT_LINT1, 0x10000);   /* LINT1 masked */
+    lwr(L_TPR, 0xFF);            /* ничего не принимать */
+    lwr(L_SVR, 0xFF);            /* software-DISABLE, spurious vector 0xFF */
+    g_active = 0;
+    kprintf("[lapic] усыплён (SVR.EN=0): INTR от PIC снова доходит до CPU\n");
+}
 
 /* ---------- IOAPIC ---------- */
 static volatile uint32_t *g_ioapic;

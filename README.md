@@ -9,7 +9,7 @@ C + ассемблере (GAS), собственный UEFI-загрузчик, 
 > live graphical desktop, aiming to run Windows PE executables via its own
 > WinAPI compatibility layer.
 
-## Текущая версия — v0.5.4
+## Текущая версия — v0.5.5
 
 Загружается за пару секунд прямо в **графический рабочий стол**: панель с
 кнопками и часами, плавающий док, перетаскиваемые окна с z-порядком,
@@ -87,7 +87,7 @@ C + ассемблере (GAS), собственный UEFI-загрузчик, 
 ### VirtualBox — самый простой путь (ISO)
 
 1. Скачать
-   **[aresos-iso-v0.5.4.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-iso-v0.5.4.zip)**
+   **[aresos-iso-v0.5.5.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-iso-v0.5.5.zip)**
    и распаковать — внутри один файл `aresos.iso`.
 2. Создать ВМ: Тип **Other**, Версия **Other/Unknown (64-bit)**, 256+ МБ ОЗУ,
    **✔ Включить EFI** (Настройки → Система). Жёсткий диск не нужен.
@@ -98,12 +98,12 @@ C + ассемблере (GAS), собственный UEFI-загрузчик, 
 
 ### ВМ как готовый диск (VMDK)
 
-**[aresos-vm-v0.5.4.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-vm-v0.5.4.zip)**
+**[aresos-vm-v0.5.5.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-vm-v0.5.5.zip)**
 → распаковать → в «Носителях» прикрепить `aresos.vmdk` к SATA → Запустить.
 
 ### Реальное железо (флешка)
 
-**[aresos-usb-v0.5.4.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-usb-v0.5.4.zip)**
+**[aresos-usb-v0.5.5.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-usb-v0.5.5.zip)**
 → записать `aresos.img` на флешку (balenaEtcher / Rufus в DD-режиме)
 → Boot Menu → «UEFI: флешка». Пошаговая инструкция и чек-лист:
 [docs/REALHARDWARE.md](docs/REALHARDWARE.md).

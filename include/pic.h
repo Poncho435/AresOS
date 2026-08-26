@@ -6,6 +6,7 @@
 
 void pic_remap(void);
 void pic_set_mask(uint8_t master, uint8_t slave);
+void pic_get_mask(uint8_t *master, uint8_t *slave);
 void pic_eoi(int vector);
 
 #endif

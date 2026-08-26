@@ -62,7 +62,7 @@ static void print_memory_summary(const bootinfo_t *bi) {
     kprintf("[mem] usable RAM total: %lu MiB\n", usable >> 20);
 }
 
-#define KERNEL_VERSION "0.5.4"
+#define KERNEL_VERSION "0.5.5"
 
 /* ---- фоновые демоны M5 (диспетчер задач покажет их в списке) ---- */
 #include "gfx.h"
@@ -201,7 +201,17 @@ void kmain(bootinfo_t *bi) {
             lapic_ok ? "LAPIC" : "PIC");
 
     __asm__ volatile ("sti");
-    for (;;) __asm__ volatile ("hlt");          /* idle-поток кmain: паркуемся */
+    /* самопроверка линий прерываний (диагностируемо по фото экрана):
+     * IF должен быть 1, маски PIC при PIT-пути - F8/EF (IRQ0/1/12 открыты) */
+    {
+        uint64_t fl;
+        uint8_t  imr1, imr2;
+        __asm__ volatile ("pushfq; pop %0" : "=r"(fl));
+        pic_get_mask(&imr1, &imr2);
+        kprintf("[m5] линии прерываний: IF=%lu, PIC IMR=%02X/%02X (ждём IF=1, IMR=F8/EF)\n",
+                (fl >> 9) & 1, (uint64_t)imr1, (uint64_t)imr2);
+    }
+    for (;;) __asm__ volatile ("hlt");          /* idle-поток kmain: паркуемся */
 
     kprintf("\nAresOS init complete. No framebuffer - halting.\n");
     for (;;) __asm__ volatile ("hlt");
