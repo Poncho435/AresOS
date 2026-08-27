@@ -1,10 +1,12 @@
-/* AresOS - рабочий стол v0.5.0: современная тёмная тема "midnight aurora".
+/* AresOS - рабочий стол: современная тёмная тема "midnight aurora".
  *  - кэшированные строки обоев -> мгновенная перерисовка мира
- *  - верхняя панель со "стеклом", часы, хинты F1/F2/F3
- *  - плавающий док: 3 значка-приложения, открываются мышкой и клавишами
- *  - окна со z-порядком: перетаскивание, raise по клику, красная точка закрытия
- *  - приложения: About (F1), Диспетчер задач (F2), Логи (F3) - журнал ядра
- *  - курсор: save/restore, чёрный контур + белое тело; Ctrl+стрелки = клавиатурная мышь */
+ *  - верхняя панель со "стеклом", часы справа, кнопки-пускатели приложений
+ *  - ИКОНКИ НА СТОЛЕ (слева): Компьютер / Файлы / Задачи / Логи
+ *  - плавающий док: 4 значка с hover-подсветкой и точками "открыто"
+ *  - окна со z-порядком: перетаскивание, raise по клику, красная x=закрыть
+ *  - приложения: О системе (F1), Диспетчер задач (F2), Логи (F3),
+ *    Проводник (F4) + Просмотр файла (демо-ФС в памяти до M6)
+ *  - курсор: save/restore, чёрный контур + белое тело; Ctrl+стрелки = клав.мышь */
 #include "desktop.h"
 #include "gfx.h"
 #include "mouse.h"
@@ -14,6 +16,7 @@
 #include "kprintf.h"
 #include "pe.h"
 #include "heap.h"
+#include "pmm.h"
 #include <stdint.h>
 
 #define PANEL_H     34
@@ -76,10 +79,11 @@ static int  contains(const char *s, const char *needle) {
 }
 
 /* ---------------- приложения/окна ---------------- */
-enum { APP_ABOUT = 0, APP_TASKMAN, APP_LOGS, APP_N };
+enum { APP_ABOUT = 0, APP_TASKMAN, APP_LOGS, APP_FILES, APP_VIEW, APP_N };
+#define LAUNCH_N 4                    /* значки в доке/панели (без просмотрщика) */
 typedef struct { int open; int32_t x, y, w, h; } win_t;
 static win_t g_w[APP_N];
-static int   g_z[APP_N] = { 0, 1, 2 };     /* порядок отрисовки: [N-1] - верх */
+static int   g_z[APP_N] = { 0, 1, 2, 3, 4 };  /* порядок отрисовки: [N-1] - верх */
 
 static void app_raise(int a) {
     int pos = 0;
@@ -134,7 +138,7 @@ static void clock_draw(void) {
     *p++ = (char)('0' + (s / 10) % 6);
     *p++ = (char)('0' + s % 10);
     *p = 0;
-    uint32_t cx = g_scr_w / 2 - 44;
+    uint32_t cx = g_scr_w - 100;   /* часы - вправо (кнопки приложений теперь слева) */
     gfx_fill_round_rect(cx, 8, 88, 18, 6, GFX_RGB(0x17, 0x1B, 0x29));
     gfx_text(cx + 12, 13, buf, C_TXT);
 }
@@ -144,13 +148,14 @@ static void panel_draw(void) {
     gfx_fill_rect(0, PANEL_H - 1, g_scr_w, 1, C_PLINE);
     gfx_text_bold(14, 13, "AresOS", C_ACCENT);
     gfx_fill_round_rect(86, 8, 62, 18, 6, GFX_RGB(0x1B, 0x20, 0x30));
-    gfx_text(94, 13, "v0.5.6", C_TXT2);
+    gfx_text(94, 13, "v0.5.7", C_TXT2);
     /* кнопки-пускатели приложений - запуск значками (F-ключи остаются дублём) */
-    static const char *BTN[APP_N] = { "О системе", "Задачи", "Логи" };
-    static const gfx_color_t BC[APP_N] = {
+    static const char *BTN[LAUNCH_N] = { "О системе", "Задачи", "Логи", "Файлы" };
+    static const gfx_color_t BC[LAUNCH_N] = {
         GFX_RGB(0x4A, 0x9D, 0xFF), GFX_RGB(0xFF, 0x9E, 0x49), GFX_RGB(0x4F, 0xC3, 0x7B),
+        GFX_RGB(0xE8, 0xC1, 0x5A),
     };
-    for (int i = 0; i < APP_N; i++) {
+    for (int i = 0; i < LAUNCH_N; i++) {
         int32_t bx = 160 + i * 98;
         int hov = (mouse_x() >= bx && mouse_x() < bx + 90 && mouse_y() < PANEL_H);
         gfx_fill_round_rect(bx, 5, 90, 24, 6, hov ? GFX_RGB(0x24, 0x2A, 0x40)
@@ -165,7 +170,7 @@ static void panel_draw(void) {
 
 static int panel_hit(int32_t mx, int32_t my) {    /* кнопка приложения или -1 */
     if (my >= PANEL_H) return -1;
-    for (int i = 0; i < APP_N; i++) {
+    for (int i = 0; i < LAUNCH_N; i++) {
         int32_t bx = 160 + i * 98;
         if (mx >= bx && mx < bx + 90) return i;
     }
@@ -173,20 +178,21 @@ static int panel_hit(int32_t mx, int32_t my) {    /* кнопка приложе
 }
 
 /* ---------------- док ---------------- */
-static uint32_t dock_x(void) { return (g_scr_w - (APP_N * DOCK_STEP + 12)) / 2; }
+static uint32_t dock_x(void) { return (g_scr_w - (LAUNCH_N * DOCK_STEP + 12)) / 2; }
 static uint32_t dock_y(void) { return g_scr_h - DOCK_H - 12; }
 
 typedef struct { const char *glyph; gfx_color_t col; } icon_t;
-static const icon_t ICONS[APP_N] = {
+static const icon_t ICONS[LAUNCH_N] = {
     { "i",  GFX_RGB(0x4A, 0x9D, 0xFF) },
     { "TM", GFX_RGB(0xFF, 0x9E, 0x49) },
     { ">_", GFX_RGB(0x4F, 0xC3, 0x7B) },
+    { "FM", GFX_RGB(0xE8, 0xC1, 0x5A) },
 };
 
 static int dock_hit(int32_t mx, int32_t my) {   /* индекс значка или -1 */
     uint32_t dx = dock_x(), dy = dock_y();
     if (my < (int32_t)dy || my >= (int32_t)(dy + DOCK_H)) return -1;
-    for (int i = 0; i < APP_N; i++) {
+    for (int i = 0; i < LAUNCH_N; i++) {
         int32_t ix = (int32_t)(dx + 12 + i * DOCK_STEP);
         if (mx >= ix && mx < ix + DOCK_ICON) return i;
     }
@@ -195,12 +201,12 @@ static int dock_hit(int32_t mx, int32_t my) {   /* индекс значка и�
 
 static void dock_draw(void) {
     uint32_t dx = dock_x(), dy = dock_y();
-    uint32_t dw = APP_N * DOCK_STEP + 12;
+    uint32_t dw = LAUNCH_N * DOCK_STEP + 12;
     gfx_fill_round_rect(dx - 1, dy - 1, dw + 2, DOCK_H + 2, 11, C_DOCK_BR);
     gfx_fill_round_rect(dx, dy, dw, DOCK_H, 10, C_DOCK);
     int32_t mx = mouse_x(), my = mouse_y();
     int hov = dock_hit(mx, my);
-    for (int i = 0; i < APP_N; i++) {
+    for (int i = 0; i < LAUNCH_N; i++) {
         uint32_t ix = dx + 12 + (uint32_t)i * DOCK_STEP;
         uint32_t iy = dy + 7;
         gfx_color_t c = ICONS[i].col;
@@ -248,6 +254,63 @@ static void pill_draw(void) {
     gfx_text(g_scr_w - 232, g_scr_h - 24, buf, C_TXT2);
 }
 
+/* ---------------- иконки на рабочем столе (левая колонка) ---------------- */
+#define DESK_X   24
+#define DESK_Y   64
+#define DESK_STEP 86
+#define DESK_COL_W 80
+
+static const struct { const char *glyph; const char *label; int app; gfx_color_t col; }
+DICON[LAUNCH_N] = {
+    { "i",  "Компьютер", APP_ABOUT,   GFX_RGB(0x4A, 0x9D, 0xFF) },
+    { "FM", "Файлы",     APP_FILES,   GFX_RGB(0xE8, 0xC1, 0x5A) },
+    { "TM", "Задачи",    APP_TASKMAN, GFX_RGB(0xFF, 0x9E, 0x49) },
+    { ">_", "Логи",      APP_LOGS,    GFX_RGB(0x4F, 0xC3, 0x7B) },
+};
+
+static int desk_hit(int32_t mx, int32_t my) {      /* индекс иконки или -1 */
+    for (int i = 0; i < LAUNCH_N; i++) {
+        int32_t iy = DESK_Y + i * DESK_STEP;
+        if (mx >= DESK_X - 6 && mx < DESK_X - 6 + DESK_COL_W &&
+            my >= iy - 4 && my < iy + 66) return i;
+    }
+    return -1;
+}
+
+static void deskicons_draw(void) {
+    int32_t mx = mouse_x(), my = mouse_y();
+    int hov = desk_hit(mx, my);
+    for (int i = 0; i < LAUNCH_N; i++) {
+        int32_t ix = DESK_X + (DESK_COL_W - 46) / 2 - 6;
+        int32_t iy = DESK_Y + i * DESK_STEP;
+        gfx_color_t c = DICON[i].col;
+        if (i == hov) {   /* мягкая подсветка при наведении */
+            gfx_fill_round_rect(DESK_X - 6, iy - 4, DESK_COL_W, 68, 8,
+                                GFX_RGB(0x1C, 0x22, 0x38));
+            c.r = (uint8_t)(c.r < 220 ? c.r + 35 : 255);
+            c.g = (uint8_t)(c.g < 220 ? c.g + 35 : 255);
+            c.b = (uint8_t)(c.b < 220 ? c.b + 35 : 255);
+        }
+        /* тень + тело иконки + блик */
+        gfx_fill_round_rect(ix + 2, iy + 3, 46, 46, 10, C_SHADOW);
+        gfx_fill_round_rect(ix, iy, 46, 46, 10, c);
+        gfx_fill_round_rect(ix + 5, iy + 4, 36, 12, 6,
+                            GFX_RGB(0xFF, 0xFF, 0xFF) /* сверху чуть света */);
+        gfx_fill_round_rect(ix + 5, iy + 4, 36, 10, 5, c);
+        gfx_text_bold(ix + (46 - 16) / 2 + (DICON[i].glyph[1] ? 0 : 6),
+                      iy + 46 / 2 - 4, DICON[i].glyph, GFX_RGB(0xFF, 0xFF, 0xFF));
+        /* подпись (по центру колонки; считаем ГЛИФЫ, не байты UTF-8!) */
+        int gl = 0;
+        for (const char *s = DICON[i].label; *s; s++)
+            if (((uint8_t)*s & 0xC0) != 0x80) gl++;
+        int lpx = gl * 8;
+        int lx = DESK_X - 6 + (DESK_COL_W - lpx) / 2;
+        if (lx < DESK_X - 6) lx = DESK_X - 6;
+        gfx_text(lx + 1, iy + 51, DICON[i].label, GFX_RGB(0x04, 0x05, 0x0A));
+        gfx_text(lx, iy + 50, DICON[i].label, C_TXT);
+    }
+}
+
 /* ---------------- окна: каркас ---------------- */
 static void draw_content(int app, int32_t x, int32_t y, int32_t w, int32_t h);
 
@@ -255,6 +318,8 @@ static const struct { const char *t; gfx_color_t c; } APP_META[APP_N] = {
     { "О системе AresOS",  GFX_RGB(0x4A, 0x9D, 0xFF) },
     { "Диспетчер задач",  GFX_RGB(0xFF, 0x9E, 0x49) },
     { "Логи системы - терминал", GFX_RGB(0x4F, 0xC3, 0x7B) },
+    { "Проводник - Мои файлы",   GFX_RGB(0xE8, 0xC1, 0x5A) },
+    { "Просмотр файла",          GFX_RGB(0xB0, 0x8A, 0xE0) },
 };
 
 static void draw_window(int app) {
@@ -292,18 +357,18 @@ static void about_draw(int32_t x, int32_t y, int32_t w) {
     (void)w;
     int32_t cx = x + 16;
     int32_t yy = y + 14;
-    gfx_text_bold(cx, yy, "Ядро AresOS 0.5.6 (x86-64)", C_TXT); yy += 18;
+    gfx_text_bold(cx, yy, "Ядро AresOS 0.5.7 (x86-64)", C_TXT); yy += 18;
     gfx_text(cx, yy, g_ram_line, C_TXT2); yy += 14;
-    gfx_text(cx, yy, "IRQ: IOAPIC+LAPIC 100 Гц (запасной PIC)", C_TXT2); yy += 14;
+    gfx_text(cx, yy, "Таймер: LAPIC 100 Гц или PIC+PIT (auto)", C_TXT2); yy += 14;
     gfx_text(cx, yy, "Куча/VMM живы, загрузчик PE32+ в ядре", C_TXT2); yy += 14;
     if (g_pe_line[0]) { gfx_text(cx, yy, g_pe_line, C_GREEN); yy += 14; }
     yy += 4;
     gfx_fill_rect(cx, yy, 240, 1, C_PLINE); yy += 8;
-    gfx_text(cx, yy, "Совет для ВМ: кликни в окно VirtualBox,", C_ACCENT); yy += 12;
-    gfx_text(cx, yy, "чтобы захватить мышь! Полный экран (Host+F)", C_ACCENT); yy += 12;
-    gfx_text(cx, yy, "тоже помогает. Ctrl+стрелки - аварийная мышь.", C_ACCENT); yy += 14;
-    gfx_text(cx, yy, "Открыть: значки дока/панели или F1/F2/F3.", C_TXT2); yy += 12;
-    gfx_text(cx, yy, "Закрыть: красная x, Esc или повторная клавиша.", C_TXT2);
+    gfx_text(cx, yy, "Запуск: иконки на столе, док, панель, F1-F4.", C_ACCENT); yy += 12;
+    gfx_text(cx, yy, "Файлы: проводник (демо-ФС), F4 или значок FM.", C_ACCENT); yy += 12;
+    gfx_text(cx, yy, "Совет для ВМ: клик в окно ВМ = захват мыши;", C_TXT2); yy += 12;
+    gfx_text(cx, yy, "полный экран Host+F; Ctrl+стрелки - аварийная мышь.", C_TXT2); yy += 12;
+    gfx_text(cx, yy, "Закрыть окно: красная x, Esc, повторная клавиша.", C_TXT2);
 }
 
 /* ---- приложение Task Manager ---- */
@@ -462,12 +527,155 @@ static void logs_draw(int32_t x, int32_t y, int32_t w, int32_t h) {
     gfx_text(cx + 4, y + 2, info, C_TXT2);
 }
 
+/* ---- приложение Проводник (демо-ФС в памяти; драйвер диска - этап M6) ---- */
+typedef struct { const char *name; int is_dir; int dir; const char *text; } fitem_t;
+
+static const fitem_t FS_ROOT[] = {
+    { "Документы", 1, 1, 0 },
+    { "Система",   1, 2, 0 },
+    { "README.TXT", 0, 0,
+      "AresOS v0.5.7\n64-битная ОС голого железа: свой загрузчик UEFI,\nсвоё ядро, свой графический рабочий стол.\nПроводник показывает демо-файлы ИЗ ПАМЯТИ -\nдрайвер диска и настоящая ФС придут на этапе M6.\n" },
+    { "version.txt", 0, 0,
+      "kernel 0.5.7 (x86-64)\nAPIC/PIC 100 Гц, PMM+VMM+heap, PE32+ loader\nUI: midnight aurora, шрифт 8x8 cyrillic\n" },
+    { "testpe.exe", 0, 0,
+      "PE32+ тестовая программа (проверка M3):\nрисует шахматку 96x96 прямо на рабочем столе\nи возвращает 0xA2E5. Загружается строго по\nспецификации PE/COFF (секции, релоки, импорты).\n" },
+};
+static const fitem_t FS_DOC[] = {
+    { "привет.txt", 0, 0,
+      "Привет из Проводника AresOS!\nЭтот файл пока живёт в памяти ядра.\nСкоро здесь будут настоящие файлы с диска.\n" },
+    { "план.txt", 0, 0,
+      "План этапа M6:\n1. драйвер диска (AHCI / initrd)\n2. VFS - единый интерфейс ФС\n3. FAT32 чтение+запись\n4. и тогда этот Проводник станет настоящим\n" },
+};
+static const fitem_t FS_SYS[] = {
+    { "kernel.elf", 0, 0,
+      "Ядро AresOS - этот файл настоящий!\nGDT/IDT, PMM/VMM/heap, LAPIC+PIC, планировщик,\nPS/2 клавиатура+мышь и весь этот рабочий стол.\n" },
+    { "bootx64.efi", 0, 0,
+      "Наш UEFI-загрузчик: ELF-парсер, графика GOP,\nпоиск ACPI RSDP, ExitBootServices.\nПишется без gnu-efi - только свои структуры.\n" },
+    { "config.ini", 0, 0,
+      "theme=midnight-aurora\nfont=8x8-cyrillic\nmouse=ps2\ntimer=PIT-100Hz\n" },
+};
+static const struct { const fitem_t *it; int n; const char *path; } FS_DIRS[] = {
+    { FS_ROOT, 5, "Мой компьютер" },
+    { FS_DOC,  2, "Мой компьютер / Документы" },
+    { FS_SYS,  3, "Мой компьютер / Система" },
+};
+#define FILE_ROW_H 15
+
+static int g_fs_dir;                                  /* 0..2 = FS_DIRS */
+static char        g_view_name[24];
+static const char *g_view_text = "";
+static int         g_view_scroll;
+
+static int view_lines(void) {
+    int n = 1;
+    for (const char *s = g_view_text; *s; s++) if (*s == '\n') n++;
+    return n;
+}
+
+static void files_draw(int32_t x, int32_t y, int32_t w, int32_t h) {
+    (void)h;
+    int32_t cx = x + 12;
+    /* хлебные крошки + плашка диска */
+    gfx_text_bold(cx, y + 6, FS_DIRS[g_fs_dir].path, C_YELLOW);
+    gfx_fill_round_rect(x + w - 128, y + 2, 116, 16, 5, C_ROW_ALT);
+    char num[16], sz[32]; char *p = sz;
+    pcat(&p, "диск RAM, своб. ");
+    u32dec((uint32_t)(pmm_free_pages() * 4 / 1024), num); pcat(&p, num);
+    pcat(&p, " МиБ");
+    gfx_text(x + w - 122, y + 6, sz, C_TXT2);
+    gfx_fill_rect(cx, y + 18, w - 24, 1, C_PLINE);
+
+    const fitem_t *items = FS_DIRS[g_fs_dir].it;
+    int n = FS_DIRS[g_fs_dir].n;
+    int rows = n + (g_fs_dir ? 1 : 0);                /* + строка ".." */
+    int32_t mx = mouse_x(), my = mouse_y();
+    for (int r = 0; r < rows; r++) {
+        int32_t ry = y + 24 + r * FILE_ROW_H;
+        int up = (g_fs_dir && r == 0);
+        const fitem_t *it = up ? 0 : &items[r - (g_fs_dir ? 1 : 0)];
+        int hov = (mx >= x + 4 && mx < x + w - 4 && my >= ry - 1 && my < ry + FILE_ROW_H - 1);
+        if (hov)
+            gfx_fill_round_rect(x + 6, ry - 1, w - 12, FILE_ROW_H, 4,
+                                GFX_RGB(0x24, 0x2B, 0x3F));
+        else if (r & 1)
+            gfx_fill_round_rect(x + 6, ry - 1, w - 12, FILE_ROW_H, 4, C_ROW_ALT);
+        int is_dir = up || it->is_dir;
+        gfx_fill_round_rect(cx, ry + 1, 11, 11, 3, is_dir ? C_YELLOW : C_BLUE);
+        if (is_dir)      gfx_text_bold(cx + 2, ry + 3, "D", GFX_RGB(0x30, 0x28, 0x10));
+        gfx_text(cx + 18, ry + 3, up ? ".." : it->name, hov ? C_TXT
+                 : (up ? C_YELLOW : C_TXT));
+        gfx_text(x + w - 64, ry + 3, is_dir ? "папка" : "файл", C_TXT2);
+    }
+    if (!rows) gfx_text(cx, y + 30, "(пусто)", C_TXT2);
+    gfx_text(cx, y + 24 + rows * FILE_ROW_H + 6,
+             "клик по строке: открыть / зайти в папку", C_TXT2);
+}
+
+static int files_click(int32_t mx, int32_t my, int32_t wy) {
+    (void)mx;
+    if (my < wy + 24 || my >= wy + 24 + 16 * FILE_ROW_H) return 0;
+    int r = (my - (wy + 24)) / FILE_ROW_H;
+    int rows = FS_DIRS[g_fs_dir].n + (g_fs_dir ? 1 : 0);
+    if (r >= rows) return 0;
+    if (g_fs_dir && r == 0) { g_fs_dir = 0; return 1; }       /* ".." - наверх */
+    const fitem_t *it = &FS_DIRS[g_fs_dir].it[r - (g_fs_dir ? 1 : 0)];
+    if (it->is_dir) { g_fs_dir = it->dir; return 1; }
+    /* файл - открыть просмотрщик (имена короткие, копируем байты как есть) */
+    int i = 0;
+    for (const char *s = it->name; *s && i < 23; s++)
+        g_view_name[i++] = *s;
+    g_view_name[i] = 0;
+    g_view_text = it->text;
+    g_view_scroll = 0;
+    g_w[APP_VIEW].open = 1;
+    app_raise(APP_VIEW);
+    return 1;
+}
+
+static void view_draw(int32_t x, int32_t y, int32_t w, int32_t h) {
+    int32_t cx = x + 12;
+    gfx_text_bold(cx, y + 6, g_view_name, C_PURPLE);
+    gfx_text(x + w - 150, y + 6, "Esc - закрыть", C_TXT2);
+    gfx_fill_rect(cx, y + 18, w - 24, 1, C_PLINE);
+    gfx_fill_round_rect(cx, y + 22, w - 24, h - 34, 5, C_TERM_BG);
+
+    int vis = (h - 42) / 11;
+    int total = view_lines();
+    int maxs = total - vis; if (maxs < 0) maxs = 0;
+    if (g_view_scroll > maxs) g_view_scroll = maxs;
+
+    int skip = g_view_scroll, row = 0;
+    char line[64]; int li = 0;
+    for (const char *s = g_view_text; ; s++) {
+        if (*s == '\n' || !*s) {
+            line[li] = 0;
+            if (skip > 0) skip--;
+            else if (row < vis) {
+                int maxc = (w - 44) / 8;
+                line[maxc < li ? maxc : li] = 0;
+                gfx_text(cx + 8, y + 27 + row * 11, line, C_TERM_LN);
+                row++;
+            }
+            li = 0;
+            if (!*s) break;
+        } else if (li < 63) line[li++] = *s;
+    }
+    if (total > vis) {
+        char info[40], num[16]; char *p = info;
+        pcat(&p, "строка "); u32dec((uint32_t)(g_view_scroll + 1), num); pcat(&p, num);
+        pcat(&p, "/"); u32dec((uint32_t)total, num); pcat(&p, num);
+        gfx_text(cx, y + h - 12, info, C_TXT2);
+    }
+}
+
 /* контент-диспетчер */
 static void draw_content(int app, int32_t x, int32_t y, int32_t w, int32_t h) {
     switch (app) {
     case APP_ABOUT:   about_draw(x, y, w); break;
     case APP_TASKMAN: tm_draw(x, y, w, h); break;
     case APP_LOGS:    logs_draw(x, y, w, h); break;
+    case APP_FILES:   files_draw(x, y, w, h); break;
+    case APP_VIEW:    view_draw(x, y, w, h); break;
     }
 }
 
@@ -538,6 +746,7 @@ static void pe_ghost(void) {
 static void world_draw(void) {
     gfx_blit_rows(g_bg);
     pe_ghost();
+    deskicons_draw();
     panel_draw();
     dock_draw();
     for (int i = 0; i < APP_N; i++)
@@ -546,8 +755,12 @@ static void world_draw(void) {
     clock_draw();
 }
 
-/* v0.5.1: частичный ремонт при перетаскивании - обновляем ТОЛЬКО область
- * (староеUновое положение окна + тень), а не весь мир -> никакого мерцания */
+/* частичный ремонт при перетаскивании - обновляем ТОЛЬКО область
+ * (староеUновое положение окна С ЗАПАСОМ на рамку/тень со ВСЕХ сторон).
+ * Порядок рисования = миру: обои -> призрак -> иконки -> панель -> док ->
+ * окна -> пилюля. v0.5.7: починен "след размытия" - рамка окна торчит на
+ * 1px влево/вверх, тень на 4-5px вправо/вниз; раньше запас был только +9
+ * справа/снизу, слева/сверху край старого окна оставался полосами. */
 static void world_repair(int32_t rx, int32_t ry, int32_t rw, int32_t rh) {
     if (rx < 0) rx = 0;
     if (ry < 0) ry = 0;
@@ -563,6 +776,11 @@ static void world_repair(int32_t rx, int32_t ry, int32_t rw, int32_t rh) {
         if (rx < gx + 96 && rx + rw > gx && ry < gy + 96 && ry + rh > gy)
             pe_ghost();
     }
+    if (rx < DESK_X - 6 + DESK_COL_W && ry < DESK_Y + LAUNCH_N * DESK_STEP &&
+        rx + rw > DESK_X - 6 && ry + rh > DESK_Y - 4)
+        deskicons_draw();
+    if (ry < PANEL_H) panel_draw();
+    if (ry + rh > (int32_t)(g_scr_h - DOCK_H - 16)) dock_draw();
     for (int i = 0; i < APP_N; i++) {           /* окна снизу вверх */
         int a = g_z[i];
         if (!g_w[a].open) continue;
@@ -570,8 +788,6 @@ static void world_repair(int32_t rx, int32_t ry, int32_t rw, int32_t rh) {
             g_w[a].y < ry + rh && g_w[a].y + g_w[a].h + 8 > ry)
             draw_window(a);
     }
-    if (ry < PANEL_H) panel_draw();
-    if (ry + rh > (int32_t)(g_scr_h - DOCK_H - 16)) dock_draw();
     if (ry + rh > (int32_t)(g_scr_h - 34) && rx + rw > (int32_t)(g_scr_w - 244))
         pill_draw();
 }
@@ -592,9 +808,11 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
     if (!g_bg) kpanic("desktop: no mem for wallpaper cache");
     bg_cache_build();
 
-    g_w[APP_ABOUT].x = 48;  g_w[APP_ABOUT].y = 92;  g_w[APP_ABOUT].w = 448; g_w[APP_ABOUT].h = 236;
+    g_w[APP_ABOUT].x = 120; g_w[APP_ABOUT].y = 80;  g_w[APP_ABOUT].w = 448; g_w[APP_ABOUT].h = 236;
     g_w[APP_TASKMAN].x = 262; g_w[APP_TASKMAN].y = 64; g_w[APP_TASKMAN].w = 560; g_w[APP_TASKMAN].h = 372;
     g_w[APP_LOGS].x = 190;  g_w[APP_LOGS].y = 78;   g_w[APP_LOGS].w = 640; g_w[APP_LOGS].h = 392;
+    g_w[APP_FILES].x = 140; g_w[APP_FILES].y = 96;  g_w[APP_FILES].w = 420; g_w[APP_FILES].h = 280;
+    g_w[APP_VIEW].x = 220;  g_w[APP_VIEW].y = 130;  g_w[APP_VIEW].w = 446; g_w[APP_VIEW].h = 270;
 
     /* статичные строки About */
     {
@@ -641,7 +859,7 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
     int32_t rep_rx = 0, rep_ry = 0, rep_rw = 0, rep_rh = 0;
 
     for (;;) {
-        int need_world = 0, tm_dirty = 0, log_dirty = 0, aux_dirty = 0;
+        int need_world = 0, tm_dirty = 0, log_dirty = 0, aux_dirty = 0, view_dirty = 0;
         rep_on = 0;
 
         /* ===== клавиатура ===== */
@@ -653,20 +871,25 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
             case KEY_F1: app_toggle(APP_ABOUT);   need_world = 1; break;
             case KEY_F2: app_toggle(APP_TASKMAN); need_world = 1; break;
             case KEY_F3: app_toggle(APP_LOGS);    need_world = 1; break;
+            case KEY_F4: app_toggle(APP_FILES);   need_world = 1; break;
             case 27: { int t = app_top();         /* Esc - закрыть верхнее */
                 if (t >= 0) { g_w[t].open = 0; need_world = 1; }
                 break; }
             case KEY_UP:
-                if (g_w[APP_LOGS].open) { g_log_scroll += 1; log_dirty = 1; }
+                if (app_top() == APP_VIEW) { if (g_view_scroll > 0) g_view_scroll--; view_dirty = 1; }
+                else if (g_w[APP_LOGS].open) { g_log_scroll += 1; log_dirty = 1; }
                 break;
             case KEY_DOWN:
-                if (g_w[APP_LOGS].open) { if (g_log_scroll > 0) g_log_scroll--; log_dirty = 1; }
+                if (app_top() == APP_VIEW) { g_view_scroll++; view_dirty = 1; }
+                else if (g_w[APP_LOGS].open) { if (g_log_scroll > 0) g_log_scroll--; log_dirty = 1; }
                 break;
             case KEY_PGUP:
-                if (g_w[APP_LOGS].open) { g_log_scroll += 20; log_dirty = 1; }
+                if (app_top() == APP_VIEW) { g_view_scroll += 12; view_dirty = 1; }
+                else if (g_w[APP_LOGS].open) { g_log_scroll += 20; log_dirty = 1; }
                 break;
             case KEY_PGDN:
-                if (g_w[APP_LOGS].open) {
+                if (app_top() == APP_VIEW) { g_view_scroll -= 12; if (g_view_scroll < 0) g_view_scroll = 0; view_dirty = 1; }
+                else if (g_w[APP_LOGS].open) {
                     g_log_scroll -= 20;
                     if (g_log_scroll < 0) g_log_scroll = 0;
                     log_dirty = 1;
@@ -718,11 +941,18 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
                     drag_app = topmost;
                     drag_dx = mx - W->x;
                     drag_dy = my - W->y;
+                } else if (topmost == APP_FILES) {
+                    if (files_click(mx, my, W->y + WIN_BAR_H))
+                        need_world = 1;
                 }
             } else if ((hit = dock_hit(mx, my)) >= 0) {
                 app_toggle(hit);
                 need_world = 1;
                 kprintf("[desktop] dock toggle app %d\n", hit);
+            } else if ((hit = desk_hit(mx, my)) >= 0) {
+                app_toggle(DICON[hit].app);
+                need_world = 1;
+                kprintf("[desktop] desk icon toggle app %d\n", DICON[hit].app);
             }
         }
     click_done:;
@@ -739,13 +969,14 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
                 if (nx < -W->w + 80) nx = -W->w + 80;
                 if (nx > (int32_t)g_scr_w - 80) nx = (int32_t)g_scr_w - 80;
                 if (nx != W->x || ny != W->y) {
-                    /* частичный ремонт: объединение старого/нового + тень */
+                    /* частичный ремонт: объединение старого/нового + рамка(1px)
+                     * и тень(4-5px) со ВСЕХ сторон - иначе "след" (v0.5.7) */
                     int32_t ox = W->x, oy = W->y;
                     W->x = nx; W->y = ny;
-                    rep_rx = ox < nx ? ox : nx;
-                    rep_ry = oy < ny ? oy : ny;
-                    rep_rw = (ox > nx ? ox : nx) + W->w - rep_rx + 9;
-                    rep_rh = (oy > ny ? oy : ny) + W->h - rep_ry + 9;
+                    rep_rx = (ox < nx ? ox : nx) - 3;
+                    rep_ry = (oy < ny ? oy : ny) - 3;
+                    rep_rw = (ox > nx ? ox : nx) + W->w - rep_rx + 13;
+                    rep_rh = (oy > ny ? oy : ny) + W->h - rep_ry + 13;
                     rep_on = 1;
                 }
             }
@@ -775,6 +1006,7 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
          * иначе зальёт чужие окна -> тогда перерисовываем весь мир */
         if (tm_dirty && app_top() != APP_TASKMAN) need_world = 1;
         if (log_dirty && app_top() != APP_LOGS)   need_world = 1;
+        if (view_dirty && app_top() != APP_VIEW)  need_world = 1;
         /* пилюля в углу может быть под окном -> тоже через мир */
         if ((moved || aux_dirty) && !need_world) {
             for (int i = 0; i < APP_N; i++)
@@ -784,7 +1016,8 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
                     need_world = 1;
         }
 
-        if (need_world || rep_on || tm_dirty || log_dirty || aux_dirty || moved) {
+        if (need_world || rep_on || tm_dirty || log_dirty || view_dirty ||
+            aux_dirty || moved) {
             cursor_hide();
             if (need_world) {
                 world_draw();
@@ -792,8 +1025,14 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
                 if (rep_on)    world_repair(rep_rx, rep_ry, rep_rw, rep_rh);
                 if (tm_dirty)  draw_window(APP_TASKMAN);
                 if (log_dirty) draw_window(APP_LOGS);
+                if (view_dirty) draw_window(APP_VIEW);
                 if (aux_dirty) { clock_draw(); pill_draw(); }
-                if (moved && !rep_on) { pill_draw(); panel_draw(); }  /* hover-эффекты */
+                if (moved && !rep_on) {   /* hover-эффекты везде */
+                    deskicons_draw();
+                    panel_draw();
+                    dock_draw();
+                    pill_draw();
+                }
             }
             cursor_show(mouse_x(), mouse_y());
         }

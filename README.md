@@ -9,7 +9,7 @@ C + ассемблере (GAS), собственный UEFI-загрузчик, 
 > live graphical desktop, aiming to run Windows PE executables via its own
 > WinAPI compatibility layer.
 
-## Текущая версия — v0.5.6
+## Текущая версия — v0.5.7
 
 Загружается за пару секунд прямо в **графический рабочий стол**: панель с
 кнопками и часами, плавающий док, перетаскиваемые окна с z-порядком,
@@ -87,7 +87,7 @@ C + ассемблере (GAS), собственный UEFI-загрузчик, 
 ### VirtualBox — самый простой путь (ISO)
 
 1. Скачать
-   **[aresos-iso-v0.5.6.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-iso-v0.5.6.zip)**
+   **[aresos-iso-v0.5.7.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-iso-v0.5.7.zip)**
    и распаковать — внутри один файл `aresos.iso`.
 2. Создать ВМ: Тип **Other**, Версия **Other/Unknown (64-bit)**, 256+ МБ ОЗУ,
    **✔ Включить EFI** (Настройки → Система). Жёсткий диск не нужен.
@@ -98,12 +98,12 @@ C + ассемблере (GAS), собственный UEFI-загрузчик, 
 
 ### ВМ как готовый диск (VMDK)
 
-**[aresos-vm-v0.5.6.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-vm-v0.5.6.zip)**
+**[aresos-vm-v0.5.7.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-vm-v0.5.7.zip)**
 → распаковать → в «Носителях» прикрепить `aresos.vmdk` к SATA → Запустить.
 
 ### Реальное железо (флешка)
 
-**[aresos-usb-v0.5.6.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-usb-v0.5.6.zip)**
+**[aresos-usb-v0.5.7.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-usb-v0.5.7.zip)**
 → записать `aresos.img` на флешку (balenaEtcher / Rufus в DD-режиме)
 → Boot Menu → «UEFI: флешка». Пошаговая инструкция и чек-лист:
 [docs/REALHARDWARE.md](docs/REALHARDWARE.md).
@@ -112,10 +112,11 @@ C + ассемблере (GAS), собственный UEFI-загрузчик, 
 
 | Действие | Как |
 |---|---|
-| Запустить приложение | кнопка в панели (About / Задачи / Логи) или иконка в доке |
-| Закрыть окно | красная × в заголовке, Esc или повторное F1/F2/F3 |
+| Запустить приложение | иконка на столе, иконка в доке, кнопка в панели или F1–F4 |
+| Закрыть окно | красная × в заголовке, Esc или повторное F1–F4 |
 | Передвинуть окно | потянуть за заголовок |
-| Прокрутка логов | ↑ / ↓, PgUp / PgDn |
+| Проводник | приложение «Файлы»: клик по строке — зайти в папку / открыть файл |
+| Прокрутка логов и файлов | ↑ / ↓, PgUp / PgDn |
 | Курсор с клавиатуры | Ctrl + стрелки |
 
 > **Про мышь в VirtualBox:** кликните внутрь окна ВМ для захвата указателя —
