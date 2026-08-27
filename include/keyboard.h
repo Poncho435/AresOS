@@ -27,5 +27,7 @@ int  keyboard_getch(void);         /* -1 = буфер пуст; ASCII или KEY
 #define KEY_MRIGHT 0x231
 #define KEY_MUP    0x232
 #define KEY_MDOWN  0x233
+/* v0.6.0: Alt+F4 - закрыть верхнее окно */
+#define KEY_ALTF4  0x234
 
 #endif

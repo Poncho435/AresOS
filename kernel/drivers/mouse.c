@@ -1,5 +1,5 @@
 /* AresOS - мышь PS/2 через контроллер 8042 (порты 0x60/0x64), IRQ12.
- * Пакет из 3 байт: [кнопки/знаки][dx][dy]. Курсор обновляется по прерываниям. */
+ * Пакеты 3 байта; после IntelliMouse-последовательности - 4 (колесо!). */
 #include "mouse.h"
 #include "io.h"
 #include "serial.h"   /* для отладочного лога init */
@@ -14,7 +14,9 @@
 static volatile int32_t g_x = 100, g_y = 100;
 static volatile int     g_left;
 static volatile int     g_moved;
-static uint8_t  g_packet[3];
+static volatile int     g_wheel;        /* накопленное колесо (+ вверх/- вниз) */
+static int     g_wheel_capable;
+static uint8_t  g_packet[4];
 static uint8_t  g_cycle;
 static volatile uint32_t g_irq_count;   /* v0.3.1: только счётчик - НЕ печатаем из IRQ! */
 
@@ -58,12 +60,24 @@ void mouse_init(void) {
 
     int ok = 1;
     ok &= mouse_write(0xF6);      /* set defaults */
+
+    /* IntelliMouse: магия "200,100,80" включает 4-байтный режим с колесом */
+    ok &= mouse_write(0xF3); ok &= mouse_write(200);
+    ok &= mouse_write(0xF3); ok &= mouse_write(100);
+    ok &= mouse_write(0xF3); ok &= mouse_write(80);
+    ok &= mouse_write(0xF2);      /* Get Device ID */
+    uint8_t devid = 0;
+    ps2_wait_read();
+    devid = inb(PS2_DATA);
+    g_wheel_capable = (devid == 0x03);
+
     ok &= mouse_write(0xF3);      /* sample rate... */
     ok &= mouse_write(100);       /* ...100 Гц */
     ok &= mouse_write(0xF4);      /* включить поток данных */
 
     if (ok)
-        kprintf("[mouse] PS/2 mouse online (100 Hz, IRQ12)\n");
+        kprintf("[mouse] PS/2 mouse online (100 Hz, IRQ12, колесо: %s)\n",
+                g_wheel_capable ? "ДА" : "нет");
     else
         kprintf("[mouse] WARNING: mouse did not ACK all commands\n");
 }
@@ -82,26 +96,33 @@ void mouse_irq_handler(void) {
         g_packet[0] = b; g_cycle = 1; break;
     case 1:
         g_packet[1] = b; g_cycle = 2; break;
-    case 2: {
-        g_packet[2] = b; g_cycle = 0;
-        int32_t dx = g_packet[1];
-        int32_t dy = g_packet[2];
-        if (g_packet[0] & 0x10) dx |= ~0xFF;   /* знак X */
-        if (g_packet[0] & 0x20) dy |= ~0xFF;   /* знак Y */
-        /* переполнение координат - пакет мусорный */
-        if (g_packet[0] & 0xC0) return;
-
-        g_x += dx;
-        g_y -= dy;                            /* ось Y у мыши инвертирована */
-        if (g_x < 0) g_x = 0;
-        if (g_y < 0) g_y = 0;
-        if (g_x > g_max_x) g_x = g_max_x;
-        if (g_y > g_max_y) g_y = g_max_y;
-        g_left = g_packet[0] & 1;
-        if (dx || dy) g_moved = 1;
-        break;
+    case 2:
+        g_packet[2] = b;
+        if (g_wheel_capable) { g_cycle = 3; break; }
+        /* fallthrough: 3-байтный пакет готов */
+        g_cycle = 0;
+        goto packet_ready;
+    case 3:
+        g_packet[3] = b; g_cycle = 0;
+        /* 4-й байт: колесо, знак в своём бит-7 (этот байт без флагов X/Y) */
+        g_wheel += (int)(int8_t)b;
+        goto packet_ready;
     }
-    }
+    return;
+packet_ready:;
+    int32_t dx = g_packet[1];
+    int32_t dy = g_packet[2];
+    if (g_packet[0] & 0x10) dx |= ~0xFF;   /* знак X */
+    if (g_packet[0] & 0x20) dy |= ~0xFF;   /* знак Y */
+    if (g_packet[0] & 0xC0) return;        /* переполнение - пакет мусорный */
+    g_x += dx;
+    g_y -= dy;                             /* ось Y у мыши инвертирована */
+    if (g_x < 0) g_x = 0;
+    if (g_y < 0) g_y = 0;
+    if (g_x > g_max_x) g_x = g_max_x;
+    if (g_y > g_max_y) g_y = g_max_y;
+    g_left = g_packet[0] & 1;
+    if (dx || dy) g_moved = 1;
 }
 
 void mouse_nudge(int dx, int dy) {
@@ -122,4 +143,10 @@ int     mouse_moved(void) {
     int m = g_moved;
     g_moved = 0;
     return m;
+}
+
+int mouse_wheel(void) {          /* забирает накопленное колесо */
+    int w = g_wheel;
+    g_wheel = 0;
+    return w;
 }

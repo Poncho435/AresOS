@@ -33,5 +33,14 @@ void gfx_blit_rows_region(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const 
 /* packed доступ к одному пикселю (для save/restore курсора) */
 uint32_t gfx_peek(uint32_t x, uint32_t y);
 void     gfx_poke(uint32_t x, uint32_t y, uint32_t packed);
+/* v0.6.0: двойная буферизация + прозрачность */
+void gfx_set_target(uint32_t *buf, uint32_t width, uint32_t height);
+void gfx_flush(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
+void gfx_blend_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, gfx_color_t c, uint8_t a);
+void gfx_blend_round_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                          uint32_t r, gfx_color_t c, uint8_t a);
+/* доступ к РЕАЛЬНОМУ экрану в обход буфера (курсор) */
+uint32_t gfx_peek_fb(uint32_t x, uint32_t y);
+void     gfx_poke_fb(uint32_t x, uint32_t y, uint32_t packed);
 
 #endif

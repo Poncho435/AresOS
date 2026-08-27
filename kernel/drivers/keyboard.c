@@ -32,7 +32,7 @@ static const char SC_HI[128] = {
 
 static volatile uint16_t g_buf[64];
 static volatile uint8_t  g_head, g_tail;
-static int g_shift, g_caps, g_e0, g_ctrl;
+static int g_shift, g_caps, g_e0, g_ctrl, g_alt;
 
 static void push(uint16_t code) {
     uint8_t n = (uint8_t)((g_head + 1) & 63);
@@ -54,6 +54,7 @@ void keyboard_irq_handler(void) {
     if (g_e0) {
         g_e0 = 0;
         if (code == 0x1D) { g_ctrl = !released; return; }   /* правый Ctrl */
+        if (code == 0x38) { g_alt  = !released; return; }   /* правый Alt */
         if (!released) {
             int kc = 0;
             switch (code) {
@@ -74,12 +75,14 @@ void keyboard_irq_handler(void) {
     case 0x2A: case 0x36: g_shift = !released; return;
     case 0x3A: if (!released) g_caps = !g_caps; return;
     case 0x1D: g_ctrl = !released; return;               /* левый Ctrl */
+    case 0x38: g_alt  = !released; return;               /* левый Alt */
     }
     if (released) return;
 
-    /* F1..F10: 0x3B..0x44 */
+    /* F1..F10: 0x3B..0x44; Alt+F4 - отдельный код (закрыть верхнее окно) */
     if (code >= 0x3B && code <= 0x44) {
-        push((uint16_t)(KEY_F1 + (code - 0x3B)));
+        if (code == 0x3E && g_alt) push(KEY_ALTF4);
+        else push((uint16_t)(KEY_F1 + (code - 0x3B)));
         return;
     }
 

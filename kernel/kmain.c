@@ -62,20 +62,18 @@ static void print_memory_summary(const bootinfo_t *bi) {
     kprintf("[mem] usable RAM total: %lu MiB\n", usable >> 20);
 }
 
-#define KERNEL_VERSION "0.5.7"
+#define KERNEL_VERSION "0.6.0"
 
 /* ---- фоновые демоны M5 (диспетчер задач покажет их в списке) ---- */
 #include "gfx.h"
 
 static void heartbeat_proc(void *arg) {
     (void)arg;
-    int on = 0;
     for (;;) {
-        /* мигающий огонёк в правом нижнем углу (правее пилюли со статусом) */
-        uint32_t x = gfx_width() - 20, y = gfx_height() - 28;
-        gfx_fill_rect(x, y, 11, 11, on ? GFX_RGB(0xFF, 0x9E, 0x49) : GFX_RGB(0x28, 0x2C, 0x40));
-        on ^= 1;
-        proc_sleep(500);
+        /* v0.6.0: огонька на экране БОЛЬШЕ НЕТ - с двойной буферизацией любые
+         * gfx-вызовы не из десктопа рисовали бы мусор в RAM-буфер. Процесс
+         * остаётся как фоновая нагрузка для Диспетчера задач. */
+        proc_sleep(1000);
     }
 }
 

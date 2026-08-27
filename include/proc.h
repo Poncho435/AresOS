@@ -28,5 +28,7 @@ void     proc_sleep(uint32_t ms);          /* тики 10 мс */
 void     proc_yield(void);
 int      proc_list(proc_info_t *out, int max);
 const char *proc_state_name(int s);
+int      proc_kill_slot(int slot);     /* v0.6.0: остановить процесс по слоту (0..3 - системные, нельзя) */
+int      proc_state_at(int slot);
 
 #endif

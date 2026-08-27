@@ -89,9 +89,12 @@ static void draw_glyph(char c, uint32_t cx, uint32_t cy) {
     draw_glyph_slot((uint8_t)c & 0x7F, cx, cy);
 }
 
+static int g_detached;                     /* v0.6.0: десктоп отключил консоль */
+void fb_console_detach(void) { g_detached = 1; }
+
 void fb_console_putc(char c) {
     static int g_utf;                      /* состояние UTF-8 между байтами */
-    if (!g_ready) return;
+    if (!g_ready || g_detached) return;    /* после detach - только logbuf/serial */
     if (c == '\n') { newline(); return; }
     if (c == '\r') { g_cur_x = 0; return; }
     if (c == '\t') {

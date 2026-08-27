@@ -6,6 +6,12 @@
 static bootinfo_fb_t g_fb;
 static int g_ready;
 
+/* v0.6.0: двойная буферизация. g_target != NULL -> весь вывод идёт в
+ * RAM-буфер (pitch = g_tw), на экран выливается региона через gfx_flush.
+ * Рендер в RAM быстрый (видеопамять uncached), мерцания нет в принципе. */
+static uint32_t *g_target;
+static uint32_t  g_tw, g_th;
+
 /* Упаковка цвета по UEFI-семантике байтов (little-endian u32):
  *   FB_FORMAT_RGB = PixelRedGreenBlue: байт0=R -> u32 = R | G<<8 | B<<16
  *   FB_FORMAT_BGR = PixelBlueGreenRed: байт0=B -> u32 = B | G<<8 | R<<16 */
@@ -17,6 +23,23 @@ static uint32_t pack(gfx_color_t c) {
 
 static inline uint32_t *fbp(void) {
     return (uint32_t *)(uintptr_t)g_fb.phys_base;
+}
+
+/* строка текущей цели рендера (RAM-буфер или сам экран) */
+static inline uint32_t *lineptr(uint32_t y) {
+    if (g_target) return g_target + (uint64_t)y * g_tw;
+    return fbp() + (uint64_t)y * g_fb.pitch;
+}
+
+/* распаковка пикселя обратно в цвет (инверсия pack) */
+static inline gfx_color_t unpack(uint32_t px) {
+    gfx_color_t c;
+    if (g_fb.format == FB_FORMAT_RGB) {
+        c.r = (uint8_t)(px & 0xFF); c.g = (uint8_t)((px >> 8) & 0xFF); c.b = (uint8_t)((px >> 16) & 0xFF);
+    } else {
+        c.b = (uint8_t)(px & 0xFF); c.g = (uint8_t)((px >> 8) & 0xFF); c.r = (uint8_t)((px >> 16) & 0xFF);
+    }
+    return c;
 }
 
 void gfx_init(const bootinfo_fb_t *fb) {
@@ -32,7 +55,7 @@ uint32_t gfx_height(void) { return g_fb.height; }
 
 void gfx_pixel(uint32_t x, uint32_t y, gfx_color_t c) {
     if (!g_ready || x >= g_fb.width || y >= g_fb.height) return;
-    fbp()[(uint64_t)y * g_fb.pitch + x] = pack(c);
+    lineptr(y)[x] = pack(c);
 }
 
 void gfx_pixel_xor(uint32_t x, uint32_t y, uint8_t mask) {
@@ -43,13 +66,15 @@ void gfx_pixel_xor(uint32_t x, uint32_t y, uint8_t mask) {
 void gfx_fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, gfx_color_t c) {
     if (!g_ready) return;
     uint32_t px = pack(c);
-    uint32_t *fb = fbp();
+    uint64_t px2 = ((uint64_t)px << 32) | px;      /* заливаем парами - в 2 раза быстрее */
     if (x + w > g_fb.width)  w = (x < g_fb.width)  ? g_fb.width - x : 0;
     if (y + h > g_fb.height) h = (y < g_fb.height) ? g_fb.height - y : 0;
     for (uint32_t row = 0; row < h; row++) {
-        uint32_t *line = fb + (uint64_t)(y + row) * g_fb.pitch;
-        for (uint32_t col = 0; col < w; col++)
-            line[x + col] = px;
+        uint32_t *line = lineptr(y + row);
+        uint32_t col = 0;
+        for (; col + 2 <= w; col += 2)
+            *(uint64_t *)(void *)(line + x + col) = px2;   /* unaligned store - ок на x86 */
+        if (col < w) line[x + col] = px;
     }
 }
 
@@ -65,7 +90,7 @@ void gfx_gradient_v_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
         };
         uint32_t px = pack(c);
         if (y + row >= g_fb.height) break;
-        uint32_t *line = fbp() + (uint64_t)(y + row) * g_fb.pitch;
+        uint32_t *line = lineptr(y + row);
         uint32_t ww = (x + w > g_fb.width) ? (g_fb.width > x ? g_fb.width - x : 0) : w;
         for (uint32_t col = 0; col < ww; col++)
             line[x + col] = px;
@@ -120,8 +145,11 @@ void gfx_blit_rows_region(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
     if (y + h > g_fb.height) h = (y < g_fb.height) ? g_fb.height - y : 0;
     for (uint32_t r = 0; r < h; r++) {
         uint32_t px = rowpx[y + r];
-        uint32_t *line = fbp() + (uint64_t)(y + r) * g_fb.pitch;
-        for (uint32_t col = 0; col < w; col++) line[x + col] = px;
+        uint64_t px2 = ((uint64_t)px << 32) | px;
+        uint32_t *line = lineptr(y + r);
+        uint32_t col = 0;
+        for (; col + 2 <= w; col += 2) *(uint64_t *)(void *)(line + x + col) = px2;
+        if (col < w) line[x + col] = px;
     }
 }
 void gfx_blit_rows(const uint32_t *rowpx) {
@@ -130,22 +158,36 @@ void gfx_blit_rows(const uint32_t *rowpx) {
 
 uint32_t gfx_peek(uint32_t x, uint32_t y) {
     if (!g_ready || x >= g_fb.width || y >= g_fb.height) return 0;
-    return fbp()[(uint64_t)y * g_fb.pitch + x];
+    return lineptr(y)[x];
 }
 void gfx_poke(uint32_t x, uint32_t y, uint32_t packed) {
+    if (!g_ready || x >= g_fb.width || y >= g_fb.height) return;
+    lineptr(y)[x] = packed;
+}
+
+/* доступ именно к РЕАЛЬНОМУ экрану (курсор рисуется поверх, минуя буфер) */
+uint32_t gfx_peek_fb(uint32_t x, uint32_t y) {
+    if (!g_ready || x >= g_fb.width || y >= g_fb.height) return 0;
+    return fbp()[(uint64_t)y * g_fb.pitch + x];
+}
+void gfx_poke_fb(uint32_t x, uint32_t y, uint32_t packed) {
     if (!g_ready || x >= g_fb.width || y >= g_fb.height) return;
     fbp()[(uint64_t)y * g_fb.pitch + x] = packed;
 }
 
 /* прямоугольник со скруглёнными углами: k-я полоса от края имеет inset RIN[r][k].
  * Стороны не перерисовываются: середина + r верхних/нижних полос = ровно h строк. */
-static const int8_t RIN[7][6] = {
+static const int8_t RIN[11][10] = {
     {0}, {0},
     {1,0}, {2,1,0}, {3,1,0,0}, {4,2,1,0,0}, {5,3,2,1,0,0},
+    {4,2,1,1,0,0,0},          /* r=7 */
+    {5,3,2,1,1,0,0,0},        /* r=8 */
+    {5,3,2,1,1,0,0,0,0},      /* r=9 */
+    {6,4,2,2,1,1,0,0,0,0},    /* r=10 */
 };
 void gfx_fill_round_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
                           uint32_t r, gfx_color_t c) {
-    if (r > 6) r = 6;
+    if (r > 10) r = 10;
     if (r > h / 2) r = h / 2;
     if (r > w / 2) r = w / 2;
     if (h > 2 * r)
@@ -154,5 +196,67 @@ void gfx_fill_round_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
         uint32_t ins = (uint32_t)RIN[r][k];
         gfx_fill_rect(x + ins, y + k,         w - 2 * ins, 1, c);
         gfx_fill_rect(x + ins, y + h - 1 - k, w - 2 * ins, 1, c);
+    }
+}
+
+/* ================= v0.6.0: двойная буферизация + прозрачность ================= */
+
+void gfx_set_target(uint32_t *buf, uint32_t width, uint32_t height) {
+    g_target = buf;
+    g_tw = width;
+    g_th = height; (void)g_th;
+}
+
+/* выливка региона из RAM-буфера на настоящий экран - атомарно для глаза */
+void gfx_flush(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
+    if (!g_ready || !g_target) return;
+    if (x + w > g_fb.width)  w = (x < g_fb.width)  ? g_fb.width - x : 0;
+    if (y + h > g_fb.height) h = (y < g_fb.height) ? g_fb.height - y : 0;
+    if (!w || !h) return;
+    for (uint32_t r = 0; r < h; r++) {
+        const uint32_t *s = g_target + (uint64_t)(y + r) * g_tw + x;
+        uint32_t *d = fbp() + (uint64_t)(y + r) * g_fb.pitch + x;
+        uint32_t col = 0;
+        for (; col + 2 <= w; col += 2)
+            *(uint64_t *)(void *)(d + col) = *(const uint64_t *)(const void *)(s + col);
+        if (col < w) d[col] = s[col];
+    }
+}
+
+/* альфа-блендинг (a: 0..255) поверх текущей цели - честное стекло в RAM */
+static inline void blend_px_at(uint32_t *line, uint32_t x, gfx_color_t c, uint8_t a) {
+    gfx_color_t d = unpack(line[x]);
+    uint32_t ia = 255 - a;
+    d.r = (uint8_t)((d.r * ia + c.r * a + 127) / 255);
+    d.g = (uint8_t)((d.g * ia + c.g * a + 127) / 255);
+    d.b = (uint8_t)((d.b * ia + c.b * a + 127) / 255);
+    line[x] = pack(d);
+}
+
+void gfx_blend_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                    gfx_color_t c, uint8_t a) {
+    if (!g_ready) return;
+    if (x + w > g_fb.width)  w = (x < g_fb.width)  ? g_fb.width - x : 0;
+    if (y + h > g_fb.height) h = (y < g_fb.height) ? g_fb.height - y : 0;
+    for (uint32_t row = 0; row < h; row++) {
+        uint32_t *line = lineptr(y + row);
+        for (uint32_t col = 0; col < w; col++)
+            blend_px_at(line, x + col, c, a);
+    }
+}
+
+void gfx_blend_round_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                          uint32_t r, gfx_color_t c, uint8_t a) {
+    if (r > 10) r = 10;
+    if (r > h / 2) r = h / 2;
+    if (r > w / 2) r = w / 2;
+    if (h > 2 * r)
+        gfx_blend_rect(x, y + r, w, h - 2 * r, c, a);
+    if (x + w > g_fb.width)  w = (x < g_fb.width)  ? g_fb.width - x : 0;
+    if (y + h > g_fb.height) h = (y < g_fb.height) ? g_fb.height - y : 0;
+    for (uint32_t k = 0; k < r; k++) {
+        uint32_t ins = (uint32_t)RIN[r][k];
+        gfx_blend_rect(x + ins, y + k,         w - 2 * ins, 1, c, a);
+        gfx_blend_rect(x + ins, y + h - 1 - k, w - 2 * ins, 1, c, a);
     }
 }

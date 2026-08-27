@@ -46,10 +46,20 @@ int proc_init(void) {
 }
 
 int proc_spawn(proc_fn fn, void *arg, const char *name, int flags) {
-    if (g_n >= MAX_PROC) return -1;
-    proc_t *p = &g_p[g_n];
+    /* v0.6.0: сначала ищем мёртвый слот для переиспользования (окна
+     * приложений - процессы, их можно открывать/закрывать много раз) */
+    int slot = -1;
+    for (int i = 1; i < g_n; i++)
+        if (g_p[i].state == PROC_DEAD) { slot = i; break; }
+    if (slot < 0) {
+        if (g_n >= MAX_PROC) return -1;
+        slot = g_n++;
+    } else if (g_p[slot].stack_base) {
+        kfree((void *)(uintptr_t)g_p[slot].stack_base);   /* старый стек */
+    }
+    proc_t *p = &g_p[slot];
     memset(p, 0, sizeof(*p));
-    p->id = g_n;
+    p->id = slot;
     p->state = PROC_READY;
     p->flags = flags;
     {   /* bounded copy: strncpy в нашей mini-libc нет */
@@ -79,7 +89,22 @@ int proc_spawn(proc_fn fn, void *arg, const char *name, int flags) {
     kprintf("[proc] spawn #%d '%s'%s -> стек %lu KiB @ %#lx\n",
             p->id, name, flags & PROC_F_BACKGROUND ? " [bg]" : "",
             (uint64_t)PROC_STACK >> 10, p->stack_base);
-    return g_n++;
+    return slot;
+}
+
+/* убить процесс по СЛОТУ (оконные просессы десктопа); системных 0..3 нельзя */
+int proc_kill_slot(int slot) {
+    if (slot < 4 || slot >= g_n) return 0;
+    if (slot == g_cur) return 0;                     /* себя - только через return */
+    if (g_p[slot].state == PROC_DEAD) return 0;
+    g_p[slot].state = PROC_DEAD;
+    kprintf("[proc] #%d '%s' остановлен\n", g_p[slot].id, g_p[slot].name);
+    return 1;
+}
+
+int proc_state_at(int slot) {
+    if (slot < 0 || slot >= g_n) return PROC_DEAD;
+    return g_p[slot].state;
 }
 
 /* вызывается как ПЕРВЫЙ код нового потока (через фейковый iretq-кадр) */
