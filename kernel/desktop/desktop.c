@@ -144,7 +144,7 @@ static void panel_draw(void) {
     gfx_fill_rect(0, PANEL_H - 1, g_scr_w, 1, C_PLINE);
     gfx_text_bold(14, 13, "AresOS", C_ACCENT);
     gfx_fill_round_rect(86, 8, 62, 18, 6, GFX_RGB(0x1B, 0x20, 0x30));
-    gfx_text(94, 13, "v0.5.5", C_TXT2);
+    gfx_text(94, 13, "v0.5.6", C_TXT2);
     /* кнопки-пускатели приложений - запуск значками (F-ключи остаются дублём) */
     static const char *BTN[APP_N] = { "О системе", "Задачи", "Логи" };
     static const gfx_color_t BC[APP_N] = {
@@ -292,7 +292,7 @@ static void about_draw(int32_t x, int32_t y, int32_t w) {
     (void)w;
     int32_t cx = x + 16;
     int32_t yy = y + 14;
-    gfx_text_bold(cx, yy, "Ядро AresOS 0.5.5 (x86-64)", C_TXT); yy += 18;
+    gfx_text_bold(cx, yy, "Ядро AresOS 0.5.6 (x86-64)", C_TXT); yy += 18;
     gfx_text(cx, yy, g_ram_line, C_TXT2); yy += 14;
     gfx_text(cx, yy, "IRQ: IOAPIC+LAPIC 100 Гц (запасной PIC)", C_TXT2); yy += 14;
     gfx_text(cx, yy, "Куча/VMM живы, загрузчик PE32+ в ядре", C_TXT2); yy += 14;

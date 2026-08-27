@@ -116,21 +116,23 @@ int  lapic_active(void) { return g_active; }
 void lapic_eoi(void)    { if (g_lapic) lwr(L_EOI, 0); }
 
 /* Откат на legacy PIC (8259) при неудачной калибровке LAPIC.
- * КРИТИЧНО: LAPIC обязан уснуть! Иначе включённый LAPIC с замаскированным
- * LINT0 перехватывает линию INTR процессора - и ни таймер PIT, ни клавиатура,
- * ни мышь от 8259 до CPU НИКОГДА не доходят: система вечно спит в hlt
- * (баг по фото пользователя: [m5] scheduler ON - и тишина, ни одного тика).
- * SVR бит 8 = 0 это software-disable: INTR/NMI снова идут напрямую от PIC. */
+ * КРИТИЧНО: оставленный без присмотра LAPIC перехватывает линию INTR
+ * процессора - и ни таймер PIT, ни клавиатура, ни мышь от 8259 до CPU не
+ * доходят (баг по фото: [m5] scheduler ON - и тишина, ни одного тика).
+ * v0.5.6: простой software-disable (SVR.EN=0, v0.5.5) на VirtualBox/NEM
+ * INTR НЕ вернул. Архитектурно правильный путь - VIRTUAL WIRE:
+ * LAPIC остаётся включён, LINT0 = ExtINT -> сигнал INTR от PIC проходит
+ * через LAPIC в ядро как обычное прерывание, вектор берётся из PIC (ICW2). */
 void lapic_fallback_off(void) {
     if (!g_lapic) return;
     lwr(L_TMRINIT, 0);
-    lwr(L_LVT_TMR,   0x10000);   /* LVT-таймер masked */
-    lwr(L_LVT_LINT0, 0x10000);   /* LINT0 masked */
-    lwr(L_LVT_LINT1, 0x10000);   /* LINT1 masked */
-    lwr(L_TPR, 0xFF);            /* ничего не принимать */
-    lwr(L_SVR, 0xFF);            /* software-DISABLE, spurious vector 0xFF */
-    g_active = 0;
-    kprintf("[lapic] усыплён (SVR.EN=0): INTR от PIC снова доходит до CPU\n");
+    lwr(L_LVT_TMR,   0x10000);   /* LVT-таймер masked: тикает PIT, не LAPIC */
+    lwr(L_TPR, 0);               /* принимаем все приоритеты */
+    lwr(L_LVT_LINT0, 0x00000700);  /* delivery mode 111b = ExtINT (INTR от PIC) */
+    lwr(L_LVT_LINT1, 0x00000400);  /* delivery mode 100b = NMI */
+    lwr(L_SVR, 0x100 | 0xFF);    /* LAPIC остаётся ENABLED, spurious 0xFF */
+    g_active = 0;                /* но EOI - через PIC! */
+    kprintf("[lapic] virtual wire: LINT0=ExtINT, INTR от 8259 идёт через LAPIC в CPU\n");
 }
 
 /* ---------- IOAPIC ---------- */

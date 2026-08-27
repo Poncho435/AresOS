@@ -62,7 +62,7 @@ static void print_memory_summary(const bootinfo_t *bi) {
     kprintf("[mem] usable RAM total: %lu MiB\n", usable >> 20);
 }
 
-#define KERNEL_VERSION "0.5.5"
+#define KERNEL_VERSION "0.5.6"
 
 /* ---- фоновые демоны M5 (диспетчер задач покажет их в списке) ---- */
 #include "gfx.h"
@@ -210,6 +210,19 @@ void kmain(bootinfo_t *bi) {
         pic_get_mask(&imr1, &imr2);
         kprintf("[m5] линии прерываний: IF=%lu, PIC IMR=%02X/%02X (ждём IF=1, IMR=F8/EF)\n",
                 (fl >> 9) & 1, (uint64_t)imr1, (uint64_t)imr2);
+    }
+    /* самодиагностика №2 (по фото): счётчик PIT ch0 обязан ДВИГАТЬСЯ даже
+     * если доставка IRQ0 сломана. Движется + нет тиков = виновата доставка;
+     * стоит = сам PIT на этой VM не эмулируется. */
+    if (!lapic_ok) {
+        extern uint16_t pit_read_ch0(void);
+        uint16_t c0a = pit_read_ch0();
+        for (volatile uint64_t i = 0; i < 4000000; i++) ;
+        uint16_t c0b = pit_read_ch0();
+        kprintf("[m5] PIT ch0 счётчик: %u -> %u (%s)\n",
+                (uint64_t)c0a, (uint64_t)c0b,
+                c0a != c0b ? "движется, PIT железно жив"
+                           : "СТОИТ - эта VM не эмулирует PIT!");
     }
     for (;;) __asm__ volatile ("hlt");          /* idle-поток kmain: паркуемся */
 
