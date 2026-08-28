@@ -70,11 +70,12 @@ void gfx_fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, gfx_color_t c
     if (x + w > g_fb.width)  w = (x < g_fb.width)  ? g_fb.width - x : 0;
     if (y + h > g_fb.height) h = (y < g_fb.height) ? g_fb.height - y : 0;
     for (uint32_t row = 0; row < h; row++) {
-        uint32_t *line = lineptr(y + row);
-        uint32_t col = 0;
-        for (; col + 2 <= w; col += 2)
-            *(uint64_t *)(void *)(line + x + col) = px2;   /* unaligned store - ок на x86 */
-        if (col < w) line[x + col] = px;
+        uint32_t *p = lineptr(y + row) + x;
+        uint32_t left = w;
+        /* v0.6.2: нечётная голова - одиночной записью, дальше u64 ВЫРОВНЕН */
+        if (left && ((uintptr_t)p & 4)) { *p++ = px; left--; }
+        while (left >= 2) { *(uint64_t *)(void *)p = px2; p += 2; left -= 2; }
+        if (left) *p = px;
     }
 }
 
@@ -116,7 +117,9 @@ void gfx_text(uint32_t x, uint32_t y, const char *s, gfx_color_t fg) {
             if (y + gy >= g_fb.height) break;
             uint8_t bits = glyph[gy];
             if (!bits) continue;
-            uint32_t *line = fbp() + (uint64_t)(y + gy) * g_fb.pitch;
+            uint32_t *line = lineptr(y + gy);   /* v0.6.2: было fbp() - текст
+                                                   шёл мимо бэкбуфера прямо в
+                                                   видеопамять и затирался flush */
             for (uint32_t gx = 0; gx < 8; gx++)
                 if ((bits >> gx) & 1 && x + gx < g_fb.width)
                     line[x + gx] = px;
@@ -216,10 +219,11 @@ void gfx_flush(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
     for (uint32_t r = 0; r < h; r++) {
         const uint32_t *s = g_target + (uint64_t)(y + r) * g_tw + x;
         uint32_t *d = fbp() + (uint64_t)(y + r) * g_fb.pitch + x;
-        uint32_t col = 0;
-        for (; col + 2 <= w; col += 2)
-            *(uint64_t *)(void *)(d + col) = *(const uint64_t *)(const void *)(s + col);
-        if (col < w) d[col] = s[col];
+        uint32_t left = w;
+        /* v0.6.2: пары через memcpy - GCC всё равно даст один mov, но без UB */
+        while (left >= 2) { uint64_t v; memcpy(&v, s, 8); memcpy(d, &v, 8);
+                            d += 2; s += 2; left -= 2; }
+        if (left) *d = *s;
     }
 }
 

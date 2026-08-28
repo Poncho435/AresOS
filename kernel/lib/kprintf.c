@@ -124,6 +124,8 @@ int kprintf(const char *fmt, ...) {
 
 __attribute__((noreturn)) void kpanic(const char *fmt, ...) {
     va_list ap;
+    fb_console_emergency();      /* v0.6.2: паника ДОЛЖНА быть видна,
+                                    даже если десктоп отключил консоль */
     serial_write("\n*** KERNEL PANIC ***\n");
     va_start(ap, fmt);
     kvprintf(fmt, ap);

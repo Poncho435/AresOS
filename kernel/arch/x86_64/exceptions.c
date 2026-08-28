@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include "kprintf.h"
 #include "regs.h"
+#include "fb_console.h"
 
 static const char *const exc_names[32] = {
     "Divide Error",            "Debug",                  "NMI",
@@ -65,6 +66,7 @@ void exception_handler(regs_t *r) {
     __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
     __asm__ volatile ("sidt %0" : "=m"(idtr));
 
+    fb_console_emergency();      /* v0.6.2: дамп краха обязан попасть на экран */
     kprintf("\n*** CPU EXCEPTION %lu: %s ***\n", r->vector, exc_names[r->vector & 31]);
     print_error_code(r);
     kprintf("  rip=%#lx  cs=%#lx  rflags=%#lx\n", r->rip, r->cs, r->rflags);

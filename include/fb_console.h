@@ -9,5 +9,6 @@ int  fb_console_ready(void);
 void fb_console_putc(char c);
 void fb_console_write(const char *s);
 void fb_console_detach(void);   /* v0.6.0: десктоп забрал экран - консоль больше не рисует */
+void fb_console_emergency(void); /* v0.6.2: аварийно вернуть консоль (паника/исключения) */
 
 #endif

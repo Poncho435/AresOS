@@ -92,6 +92,11 @@ static void draw_glyph(char c, uint32_t cx, uint32_t cy) {
 static int g_detached;                     /* v0.6.0: десктоп отключил консоль */
 void fb_console_detach(void) { g_detached = 1; }
 
+/* v0.6.2: АВАРИЙНЫЙ режим - паника/исключение обязаны быть видимыми даже
+ * когда десктоп забрал экран. Консоль пишет прямо в видеопамять (fb_ptr),
+ * поэтому достаточно снять флаг - текст ляжет поверх стола. */
+void fb_console_emergency(void) { g_detached = 0; }
+
 void fb_console_putc(char c) {
     static int g_utf;                      /* состояние UTF-8 между байтами */
     if (!g_ready || g_detached) return;    /* после detach - только logbuf/serial */
