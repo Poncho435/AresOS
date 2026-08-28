@@ -241,7 +241,7 @@ static void panel_draw(void) {
     gfx_fill_rect(0, PANEL_H - 1, g_scr_w, 1, C_PLINE);
     gfx_text_bold(14, 13, "AresOS", C_ACCENT);
     gfx_blend_round_rect(86, 8, 62, 18, 6, C_GLASS, 170);
-    gfx_text(94, 13, "v0.6.0", C_TXT2);
+    gfx_text(94, 13, "v0.6.1", C_TXT2);
     static const char *BTN[LAUNCH_N] = { "О системе", "Задачи", "Логи", "Файлы" };
     static const gfx_color_t BC[LAUNCH_N] = { C_BLUE, C_ACCENT, C_GREEN, C_YELLOW };
     int32_t mx = mouse_x(), my = mouse_y();
@@ -410,7 +410,7 @@ static void about_draw(int32_t x, int32_t y, int32_t w) {
     (void)w;
     int32_t cx = x + 16;
     int32_t yy = y + 14;
-    gfx_text_bold(cx, yy, "Ядро AresOS 0.6.0 (x86-64)", C_TXT); yy += 18;
+    gfx_text_bold(cx, yy, "Ядро AresOS 0.6.1 (x86-64)", C_TXT); yy += 18;
     gfx_text(cx, yy, g_ram_line, C_TXT2); yy += 14;
     gfx_text(cx, yy, "Окна = процессы. Куча/VMM живы, PE32+ в ядре", C_TXT2); yy += 14;
     if (g_pe_line[0]) { gfx_text(cx, yy, g_pe_line, C_GREEN); yy += 14; }
@@ -582,9 +582,9 @@ static const fitem_t FS_ROOT[] = {
     { "Документы", 1, 1, 0 },
     { "Система",   1, 2, 0 },
     { "README.TXT", 0, 0,
-      "AresOS v0.6.0\n64-битная ОС голого железа: свой загрузчик UEFI,\nсвоё ядро, свой графический рабочий стол.\nПроводник показывает демо-файлы ИЗ ПАМЯТИ -\nдрайвер диска и настоящая ФС придут на этапе M6.\n" },
+      "AresOS v0.6.1\n64-битная ОС голого железа: свой загрузчик UEFI,\nсвоё ядро, свой графический рабочий стол.\nПроводник показывает демо-файлы ИЗ ПАМЯТИ -\nдрайвер диска и настоящая ФС придут на этапе M6.\n" },
     { "version.txt", 0, 0,
-      "kernel 0.6.0 (x86-64)\nAPIC/PIC 100 Гц, PMM+VMM+heap, PE32+ loader\nокна-процессы, стекло-UI, двойная буферизация\n" },
+      "kernel 0.6.1 (x86-64)\nAPIC/PIC 100 Гц, PMM+VMM+heap, PE32+ loader\nокна-процессы, стекло-UI, двойная буферизация\n" },
     { "testpe.exe", 0, 0,
       "PE32+ тестовая программа (проверка M3):\nрисует шахматку 96x96 прямо на рабочем столе\nи возвращает 0xA2E5. Загружается строго по\nспецификации PE/COFF (секции, релоки, импорты).\n" },
 };
@@ -935,11 +935,17 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
 
     /* RAM-буфер кадра (двойная буферизация) + кэш обоев */
     g_back = (uint32_t *)kmalloc((uint64_t)g_scr_w * g_scr_h * sizeof(uint32_t));
-    if (!g_back) kpanic("desktop: no mem for backbuffer");
+    if (g_back) {
+        gfx_set_target(g_back, g_scr_w, g_scr_h);  /* весь UI рисуется в RAM */
+    } else {
+        /* v0.6.1: деградация вместо паники - рисуем прямо в видеопамять
+         * (gfx_flush станет холостым, курсор работает как раньше) */
+        kprintf("[desktop] ВНИМАНИЕ: нет %lu МиБ под бэкбуфер - прямая отрисовка\n",
+                ((uint64_t)g_scr_w * g_scr_h * 4) >> 20);
+    }
     g_bg = (uint32_t *)kmalloc(g_scr_h * sizeof(uint32_t));
     if (!g_bg) kpanic("desktop: no mem for wallpaper cache");
     bg_cache_build();
-    gfx_set_target(g_back, g_scr_w, g_scr_h);      /* весь UI теперь рисуется в RAM */
 
     {
         char num[16]; char *p = g_ram_line;

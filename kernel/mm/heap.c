@@ -7,7 +7,9 @@
 #include <string.h>
 
 #define HEAP_VA     0x500000000ULL          /* 20 ГиБ - вне identity-зон и HHDM-RAM */
-#define HEAP_PAGES  512                     /* 2 МиБ арены */
+#define HEAP_PAGES  4096                    /* 16 МиБ арены (v0.6.1: было 2 МиБ -
+                                               бэкбуферу стола 1024x768x32 нужно 3 МиБ
+                                               единым куском; запас на будущее) */
 #define BLOCK_MAGIC 0xB10CB10CB10CB10CULL
 #define ALIGN16(n) (((n) + 15) & ~15ULL)
 

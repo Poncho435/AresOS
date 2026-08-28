@@ -10,7 +10,7 @@ AresOS — bare-metal ОС: она загружается **без Windows и э
 
 1. Любая USB-флешка (хватит 1 ГБ). **Всё на ней будет стёрто.**
 2. Файл `aresos.img` — скачай zip с образом из репозитория:
-   **[dist/aresos-usb-v0.6.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-usb-v0.6.0.zip)**
+   **[dist/aresos-usb-v0.6.1.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-usb-v0.6.1.zip)**
    (или собери сам: `make` → `build/aresos.img`). Распакуй zip — внутри один файл `aresos.img` (~68 МБ).
    Контрольная сумма в `dist/SHA256SUMS.txt`.
 
@@ -104,7 +104,7 @@ AresOS init complete (M2). CPU halting
 
 ## Запуск в VirtualBox (простой путь — VMDK, без командной строки)
 
-1. Скачай и распакуй **[aresos-vm-v0.6.0.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-vm-v0.6.0.zip)**
+1. Скачай и распакуй **[aresos-vm-v0.6.1.zip](https://github.com/Poncho435/AresOS/raw/arena/01a02ad5-aresos/dist/aresos-vm-v0.6.1.zip)**
    — внутри два файла: `aresos.vmdk` и `aresos.img` (оба нужны, в одной папке!).
 2. VirtualBox → ВМ: Тип **Other**, Версия **Other/Unknown (64-bit)**, 256 МБ, **✔ EFI**.
 3. **Настроить → Носители** → **Контроллер: SATA** → «добавить жёсткий диск» →
