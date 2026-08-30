@@ -4,7 +4,8 @@
 
 void keyboard_init(void);
 void keyboard_irq_handler(void);   /* читает байт из 0x60 */
-int  keyboard_getch(void);         /* -1 = буфер пуст; ASCII или KEY_* */
+int  keyboard_getch(void);         /* -1 = буфер пуст; ASCII/UTF-8 байт или KEY_* */
+int  keyboard_ru(void);            /* v0.7.0: 1 = русская раскладка (Alt+Shift) */
 
 #define KEY_F1  0x201
 #define KEY_F2  0x202

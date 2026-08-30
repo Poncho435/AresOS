@@ -42,5 +42,9 @@ void gfx_blend_round_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
 /* доступ к РЕАЛЬНОМУ экрану в обход буфера (курсор) */
 uint32_t gfx_peek_fb(uint32_t x, uint32_t y);
 void     gfx_poke_fb(uint32_t x, uint32_t y, uint32_t packed);
+/* v0.7.0: масштабный текст (Настройки -> Интерфейс): mag10 в десятых долях
+ * (10 = обычный 8px, 15 = 12px, 20 = 16px). Ширина знакоместа = 8*mag10/10. */
+void gfx_text_mag(uint32_t x, uint32_t y, const char *s, gfx_color_t fg, int mag10);
+void gfx_text_bold_mag(uint32_t x, uint32_t y, const char *s, gfx_color_t fg, int mag10);
 
 #endif

@@ -30,9 +30,22 @@ static const char SC_HI[128] = {
     [0x33]='<', [0x34]='>', [0x35]='?', [0x39]=' ',
 };
 
+/* v0.7.0: русская раскладка "йцукен" (Alt+Shift = переключить EN<->RU).
+ * Таблица = номер буквы 0..31 (а=0..я=31) и 32 = ё; 0 - клавиша не буква. */
+static const uint8_t SC_RU[128] = {
+    [0x10]=9,  [0x11]=22, [0x12]=19, [0x13]=10, [0x14]=5,  [0x15]=13,
+    [0x16]=3,  [0x17]=24, [0x18]=25, [0x19]=7,  [0x1A]=21, [0x1B]=26,
+    [0x1E]=20, [0x1F]=27, [0x20]=2,  [0x21]=0,  [0x22]=15, [0x23]=16,
+    [0x24]=14, [0x25]=11, [0x26]=4,  [0x27]=6,  [0x28]=29,
+    [0x29]=32,
+    [0x2C]=31, [0x2D]=23, [0x2E]=17, [0x2F]=12, [0x30]=8,  [0x31]=18,
+    [0x32]=28, [0x33]=1,  [0x34]=30,
+};
+
 static volatile uint16_t g_buf[64];
 static volatile uint8_t  g_head, g_tail;
 static int g_shift, g_caps, g_e0, g_ctrl, g_alt;
+static int g_ru;
 
 static void push(uint16_t code) {
     uint8_t n = (uint8_t)((g_head + 1) & 63);
@@ -72,12 +85,32 @@ void keyboard_irq_handler(void) {
     }
 
     switch (code) {
-    case 0x2A: case 0x36: g_shift = !released; return;
+    case 0x2A: case 0x36:
+        if (!released && g_alt) g_ru = !g_ru;    /* Alt+Shift: раскладка EN<->RU */
+        g_shift = !released;
+        return;
     case 0x3A: if (!released) g_caps = !g_caps; return;
     case 0x1D: g_ctrl = !released; return;               /* левый Ctrl */
     case 0x38: g_alt  = !released; return;               /* левый Alt */
     }
     if (released) return;
+
+    /* --- русская буква: кладём ДВА байта UTF-8 в очередь --- */
+    if (g_ru) {
+        uint8_t idx = SC_RU[code];
+        if (idx) {
+            int upper = (g_caps != g_shift);
+            uint8_t b1, b2;
+            if (idx == 32) { b1 = 0xD0 + (upper ? 0 : 1); b2 = 0x81 + (upper ? 0 : 0x10); /* Ёё */ }
+            else if (idx < 16)  /* а..п / А..П */
+                { b1 = 0xD0; b2 = (uint8_t)(0xB0 + idx - (upper ? 0x20 : 0)); }
+            else                /* р..я / Р..Я */
+                { b1 = upper ? 0xD0 : 0xD1; b2 = (uint8_t)((upper ? 0xA0 : 0x80) + (idx - 16)); }
+            push((uint16_t)b1); push((uint16_t)b2);
+            return;
+        }
+        /* не буква: падаем в EN-таблицы как обычно */
+    }
 
     /* F1..F10: 0x3B..0x44; Alt+F4 - отдельный код (закрыть верхнее окно) */
     if (code >= 0x3B && code <= 0x44) {
@@ -101,3 +134,5 @@ int keyboard_getch(void) {
     g_tail = (uint8_t)((g_tail + 1) & 63);
     return c;
 }
+
+int keyboard_ru(void) { return g_ru; }   /* v0.7.0: индикатор раскладки RU/EN */

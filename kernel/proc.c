@@ -8,8 +8,8 @@
 
 #define MAX_PROC 32
 #define PROC_STACK 32768       /* 32 КиБ (v0.5.1: было 16 - pe_demo+kprintf глубокие) */
-#define HZ 100            /* таймер 100 Гц -> тик 10 мс */
-#define TIMESLICE 4       /* 40 мс квант */
+#define HZ 1000           /* v0.7.0: таймер 1000 Гц -> тик 1 мс (60 fps!) */
+#define TIMESLICE 40      /* 40 мс квант */
 
 /* читает irq_common (idt_stubs.S) - НЕ static! */
 uint64_t  g_sched_new_rsp;
@@ -140,8 +140,8 @@ const char *proc_state_name(int s) {
 
 uint64_t sched_ticks(void) { return g_ticks; }
 
-void proc_sleep(uint32_t ms) {
-    g_p[g_cur].wake_tick = g_ticks + (ms + 9) / 10;
+void proc_sleep(uint32_t ms) {           /* 1 тик = 1 мс (таймер 1000 Гц) */
+    g_p[g_cur].wake_tick = g_ticks + (ms ? ms : 1);
     g_p[g_cur].state = PROC_SLEEP;
     while (g_p[g_cur].state == PROC_SLEEP)
         __asm__ volatile ("hlt");

@@ -202,6 +202,50 @@ void gfx_poke_fb(uint32_t x, uint32_t y, uint32_t packed) {
     fbp()[(uint64_t)y * g_fb.pitch + x] = packed;
 }
 
+/* ================= v0.7.0: масштабный текст =================
+ * Каждый исходный пиксель 8x8 покрывает блок (mag10/10)x(mag10/10):
+ * dst0 = src*mag10/10, dst1 = (src+1)*mag10/10 (без дробей - целые границы). */
+void gfx_text_mag(uint32_t x_, uint32_t y_, const char *s, gfx_color_t fg, int mag10) {
+    if (!g_ready) return;
+    if (mag10 <= 10) { gfx_text(x_, y_, s, fg); return; }
+    uint32_t px = pack(fg);
+    int64_t x = (int32_t)x_;
+    int64_t y = (int32_t)y_;
+    int adv = 8 * mag10 / 10;
+    int st = 0;
+    for (; *s; s++, x += adv) {
+        int slot = fontex_slot(&st, (uint8_t)*s);
+        if (slot < 0) { x -= adv; continue; }
+        const uint8_t *glyph = fontex_glyph(slot);
+        for (int gy = 0; gy < 8; gy++) {
+            uint8_t bits = glyph[gy];
+            if (!bits) continue;
+            int64_t dy0 = y + (int64_t)gy * mag10 / 10;
+            int64_t dy1 = y + (int64_t)(gy + 1) * mag10 / 10;
+            if (dy1 <= 0) continue;
+            if (dy0 >= (int64_t)g_fb.height) break;
+            if (dy0 < 0) dy0 = 0;
+            if (dy1 > (int64_t)g_fb.height) dy1 = g_fb.height;
+            for (int gx = 0; gx < 8; gx++) {
+                if (!((bits >> gx) & 1)) continue;
+                int64_t dx0 = x + (int64_t)gx * mag10 / 10;
+                int64_t dx1 = x + (int64_t)(gx + 1) * mag10 / 10;
+                if (dx0 < 0) dx0 = 0;
+                if (dx1 > (int64_t)g_fb.width) dx1 = g_fb.width;
+                for (int64_t yy = dy0; yy < dy1; yy++) {
+                    uint32_t *line = lineptr((uint32_t)yy);
+                    for (int64_t xx = dx0; xx < dx1; xx++) line[xx] = px;
+                }
+            }
+        }
+    }
+}
+
+void gfx_text_bold_mag(uint32_t x, uint32_t y, const char *s, gfx_color_t fg, int mag10) {
+    gfx_text_mag(x, y, s, fg, mag10);
+    gfx_text_mag(x + (mag10 > 10 ? mag10 / 10 : 1), y, s, fg, mag10);
+}
+
 /* прямоугольник со скруглёнными углами: k-я полоса от края имеет inset RIN[r][k].
  * Стороны не перерисовываются: середина + r верхних/нижних полос = ровно h строк. */
 static const int8_t RIN[11][10] = {

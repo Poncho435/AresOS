@@ -97,18 +97,18 @@ int lapic_init(void) {
         lapic_fallback_off();
         return 0;
     }
-    uint32_t per_10ms = d / 5;       /* 50 мс -> 10 мс (100 Гц) */
-    if (per_10ms < 4000) {           /* ~>25 МГц после /16 - чушь для bus clock */
-        kprintf("[lapic] per_10ms=%lu слишком мал - откат на PIC\n", (uint64_t)per_10ms);
+    uint32_t per_1ms = d / 50;       /* 50 мс -> 1 мс (v0.7.0: 1000 Гц для 60 fps) */
+    if (per_1ms < 400) {             /* ~>25 МГц после /16 - чушь для bus clock */
+        kprintf("[lapic] per_1ms=%lu слишком мал - откат на PIC\n", (uint64_t)per_1ms);
         lapic_fallback_off();
         return 0;
     }
     lwr(L_LVT_TMR, TIMER_VECTOR | 0x20000);   /* periodic */
-    lwr(L_TMRINIT, per_10ms);
+    lwr(L_TMRINIT, per_1ms);
 
     g_active = 1;
-    kprintf("[lapic] OK: таймер 100 Гц (замеры %lu/%lu, init=%lu), vector=0x40\n",
-            (uint64_t)delta[0], (uint64_t)delta[1], (uint64_t)per_10ms);
+    kprintf("[lapic] OK: таймер 1000 Гц (замеры %lu/%lu, init=%lu), vector=0x40\n",
+            (uint64_t)delta[0], (uint64_t)delta[1], (uint64_t)per_1ms);
     return 1;
 }
 

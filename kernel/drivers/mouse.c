@@ -23,6 +23,26 @@ static volatile uint32_t g_irq_count;   /* v0.3.1: только счётчик -
 /* ограничители - устанавливаются десктопом после инициализации графики */
 static int32_t g_max_x = 1024, g_max_y = 768;
 
+/* v0.7.0: настройки указателя (Настройки -> Мышь).
+ *  g_speed_pct: 50..250%, накопление дробной части - курсор не "скачет"
+ *  g_accel:     классическое x2-ускорение для резких движений (как в Windows) */
+static int g_speed_pct = 100;
+static int g_accel = 1;
+static int g_frac_x, g_frac_y;
+
+void mouse_set_speed(int pct) { if (pct < 25) pct = 25; if (pct > 300) pct = 300; g_speed_pct = pct; }
+int  mouse_get_speed(void) { return g_speed_pct; }
+void mouse_set_accel(int on) { g_accel = !!on; }
+int  mouse_get_accel(void) { return g_accel; }
+
+/* скорость + накопление дробной части: возвращает целые пиксели сдвига */
+static int32_t apply_speed(int32_t d, int *frac) {
+    int32_t tot = d * g_speed_pct + *frac;   /* +/- остаток прошлых пакетов */
+    int32_t out = tot / 100;
+    *frac = (int)(tot - out * 100);
+    return out;
+}
+
 static void ps2_wait_read(void) {
     for (int i = 0; i < 100000; i++) {
         if (inb(PS2_STATUS) & 0x01) return;
@@ -115,8 +135,13 @@ packet_ready:;
     if (g_packet[0] & 0x10) dx |= ~0xFF;   /* знак X */
     if (g_packet[0] & 0x20) dy |= ~0xFF;   /* знак Y */
     if (g_packet[0] & 0xC0) return;        /* переполнение - пакет мусорный */
-    g_x += dx;
-    g_y -= dy;                             /* ось Y у мыши инвертирована */
+    /* v0.7.0: ускорение для резких движений, затем - настраиваемая скорость */
+    if (g_accel) {
+        if (dx > 6 || dx < -6) dx *= 2;
+        if (dy > 6 || dy < -6) dy *= 2;
+    }
+    g_x += apply_speed(dx, &g_frac_x);
+    g_y -= apply_speed(dy, &g_frac_y);     /* ось Y у мыши инвертирована */
     if (g_x < 0) g_x = 0;
     if (g_y < 0) g_y = 0;
     if (g_x > g_max_x) g_x = g_max_x;

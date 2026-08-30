@@ -1,3 +1,3 @@
-3a6b0ded2851c8b7b7c210cc0d3f7534397fe3735f714ca1530ff852acd1b2ba  aresos-iso-v0.6.3.zip
-b803c21cd739791d5d3ad389ca5f685d85205ecac9718771a7389954e5193fe6  aresos-usb-v0.6.3.zip
-97dc8121cf2b154d936cbb0dcd698a83cd7d3e1a342fe552166129ff468cac83  aresos-vm-v0.6.3.zip
+486bcc84ceb82c3940192066cbffeafa0dae0b6c231aaa8c8b01915cbb38ccc1  aresos-iso-v0.7.0.zip
+4704a342b0292b2289147a3b7eaf573b7ec50eadf9e9accdba3d8acefff0baf2  aresos-usb-v0.7.0.zip
+4c7a10d3c09a6bde160c629a9b9197e7996620db44fbc52d1d9fb6c4c4998cc1  aresos-vm-v0.7.0.zip

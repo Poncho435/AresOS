@@ -17,6 +17,8 @@
 #include "lapic.h"
 #include "proc.h"
 #include "desktop.h"
+#include "vfs.h"
+#include "efi_rt.h"
 #include <stdint.h>
 
 extern void gdt_init(void);
@@ -62,7 +64,7 @@ static void print_memory_summary(const bootinfo_t *bi) {
     kprintf("[mem] usable RAM total: %lu MiB\n", usable >> 20);
 }
 
-#define KERNEL_VERSION "0.6.3"
+#define KERNEL_VERSION "0.7.0"
 
 /* ---- фоновые демоны M5 (диспетчер задач покажет их в списке) ---- */
 #include "gfx.h"
@@ -146,10 +148,12 @@ void kmain(bootinfo_t *bi) {
     pmm_init(bi);
 
     /* ===== M3: своя виртуальная память + куча ===== */
-    vmm_init(bi);          /* свои таблицы: identity+HHDM, null-guard, NX, WP */
+    vmm_init(bi);          /* свои таблицы: identity+HHDM+UEFI-RT, null-guard, NX, WP */
     heap_init();           /* арена кучи через VMM */
     heap_stress_test();    /* DoD M3: миллион случайных alloc/free */
     pe_demo_init(&bi->fb); /* готовим контекст для TESTPE.EXE (запустит десктоп) */
+    efi_rt_init(bi);       /* v0.7.0: NVRAM-настройки + ResetSystem */
+    vfs_init();            /* v0.7.0: ramfs - настоящие папки/файлы в памяти */
 
     /* дымовой тест аллокатора */
     uint64_t a = pmm_alloc_page();
@@ -177,15 +181,15 @@ void kmain(bootinfo_t *bi) {
         ioapic_route_irq(1, 33);
         ioapic_route_irq(12, 44);
         pic_set_mask(0xFF, 0xFF);              /* PIC уходит с поля - всё через LAPIC */
-        kprintf("[irq] model: IOAPIC -> LAPIC (kbd=33, mouse=44), timer=LAPIC 100Hz\n");
+        kprintf("[irq] model: IOAPIC -> LAPIC (kbd=33, mouse=44), timer=LAPIC 1000Hz\n");
     } else {
-        /* PIT ch0 как системный тик 100 Гц + IRQ1 (клавиатура) + IRQ12 (мышь) */
+        /* PIT ch0 как системный тик 1000 Гц + IRQ1 (клавиатура) + IRQ12 (мышь) */
         {
-            extern void pit_init_100hz(void);
-            pit_init_100hz();
+            extern void pit_init_1000hz(void);
+            pit_init_1000hz();
         }
         pic_set_mask((uint8_t)~0x07, (uint8_t)~0x10);  /* IRQ0,IRQ1,cascade | IRQ12 */
-        kprintf("[irq] model: legacy PIC 8259, PIT tick 100 Hz, kbd=33, mouse=44\n");
+        kprintf("[irq] model: legacy PIC 8259, PIT tick 1000 Hz, kbd=33, mouse=44\n");
     }
     mouse_init();
 
@@ -195,7 +199,7 @@ void kmain(bootinfo_t *bi) {
     proc_spawn(sysmon_proc,    NULL, "sysmon",    PROC_F_BACKGROUND);
     proc_spawn(desktop_proc,   NULL, "desktop",   0);
 
-    kprintf("\n[m5] scheduler ON: %s модель, тик 100 Гц - посмотри диспетчер (F2)!\n",
+    kprintf("\n[m5] scheduler ON: %s модель, тик 1000 Гц (1 мс) - диспетчер: F2!\n",
             lapic_ok ? "LAPIC" : "PIC");
 
     __asm__ volatile ("sti");

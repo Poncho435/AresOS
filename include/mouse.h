@@ -16,5 +16,10 @@ int     mouse_wheel(void);   /* колесо с прошлого опроса (+
 uint32_t mouse_irq_count(void); /* сколько IRQ12 доставлено (диагностика) */
 /* v0.5.0: программное движение курсора (клавиатурный режим Ctrl+стрелки) */
 void    mouse_nudge(int dx, int dy);
+/* v0.7.0: настройки указателя (Настройки -> Мышь) */
+void    mouse_set_speed(int pct);   /* 25..300 % */
+int     mouse_get_speed(void);
+void    mouse_set_accel(int on);    /* ускорение при резком движении */
+int     mouse_get_accel(void);
 
 #endif

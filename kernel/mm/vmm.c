@@ -103,22 +103,92 @@ uint64_t vmm_get_phys(uint64_t virt) {
     return (pte && (*pte & PTE_P)) ? (*pte & PTE_ADDR) : 0;
 }
 
+/* ---- v0.7.0: UEFI Runtime-регионы ----
+ * Чтобы ПОСЛЕ ExitBootServices вызывать SetVariable/ResetSystem, код прошивки
+ * (EfiRuntimeServicesCode/Data) обязан быть замаплен и ИСПОЛНЯЕМЫМ - а наша
+ * identity-карта 0..4 ГиБ по умолчанию вся NX! Собираем регионы с атрибутом
+ * EFI_MEMORY_RUNTIME из карты UEFI и мапим их постранично: код - без NX. */
+#define MAX_RT 16
+typedef struct { uint32_t type; uint32_t _pad; uint64_t phys, virt, pages, attr; }
+efi_desc_t;
+static uint64_t g_rt_lo[MAX_RT], g_rt_hi[MAX_RT];
+static uint32_t g_rt_ty[MAX_RT];
+static int      g_rt_n;
+
+static int page_in_rt(uint64_t pa, int want_code) {
+    for (int i = 0; i < g_rt_n; i++) {
+        if (pa >= g_rt_lo[i] && pa < g_rt_hi[i]) {
+            int is_code = (g_rt_ty[i] == 5);   /* EfiRuntimeServicesCode */
+            return want_code ? is_code : !is_code;
+        }
+    }
+    return 0;
+}
+
+static void rt_scan(const bootinfo_t *bi) {
+    g_rt_n = 0;
+    if (!bi || !bi->mmap_phys) return;
+    const uint8_t *end = (const uint8_t *)(uintptr_t)bi->mmap_phys + bi->mmap_size;
+    for (const uint8_t *p = (const uint8_t *)(uintptr_t)bi->mmap_phys;
+         p < end && g_rt_n < MAX_RT; p += bi->mmap_desc_size) {
+        const efi_desc_t *d = (const efi_desc_t *)p;
+        if (!(d->attr & (1ULL << 63))) continue;          /* EFI_MEMORY_RUNTIME */
+        if (!d->pages) continue;
+        g_rt_lo[g_rt_n] = d->phys;
+        g_rt_hi[g_rt_n] = d->phys + d->pages * 4096ULL;
+        g_rt_ty[g_rt_n] = d->type;
+        g_rt_n++;
+    }
+}
+
+/* 2-МиБ слот [0..2М) identity: пересекается ли с RT-регионом? */
+static int slot_hits_rt(uint64_t base) {
+    for (int i = 0; i < g_rt_n; i++)
+        if (base < g_rt_hi[i] && base + 0x200000ULL > g_rt_lo[i]) return 1;
+    return 0;
+}
+
+/* заполнить страничную таблицу слота 2 МиБ с учётом RT-флагов */
+static void fill_slot_pt(uint64_t *pt, uint64_t base) {
+    for (int i = 0; i < 512; i++) {
+        uint64_t pa = base + ((uint64_t)i << 12);
+        uint64_t flags = PTE_P | PTE_W | PTE_NX;
+        if (page_in_rt(pa, 1)) flags = PTE_P | PTE_W;    /* RT код - исполняемый */
+        pt[i] = pa | flags;
+    }
+}
+
 void vmm_init(const bootinfo_t *bi) {
-    (void)bi;
+    rt_scan(bi);
     g_pml4 = new_table();
     uint64_t *pdpt = new_table();
     g_pml4[0] = ((uint64_t)(uintptr_t)pdpt) | PTE_P | PTE_W;
 
-    /* 4 PD на 0..4 ГиБ */
+    /* 4 PD на 0..4 ГиБ; слоты, задетые RT-прошивкой, - постранично */
     uint64_t *pd[4];
     for (int d = 0; d < 4; d++) {
         pd[d] = new_table();
         pdpt[d] = ((uint64_t)(uintptr_t)pd[d]) | PTE_P | PTE_W;
         for (int i = 0; i < 512; i++) {
             uint64_t base = ((uint64_t)d << 30) + ((uint64_t)i << 21);
-            pd[d][i] = base | PTE_P | PTE_W | PTE_PS | PTE_NX;
+            if (slot_hits_rt(base)) {
+                uint64_t *pt_rt = new_table();
+                pd[d][i] = ((uint64_t)(uintptr_t)pt_rt) | PTE_P | PTE_W;
+                fill_slot_pt(pt_rt, base);
+            } else {
+                pd[d][i] = base | PTE_P | PTE_W | PTE_PS | PTE_NX;
+            }
         }
     }
+    /* RT-регионы выше 4 ГиБ (бывает на больших VM) - вне наших 4 identity-PD */
+    for (int i = 0; i < g_rt_n; i++)
+        for (uint64_t pa = g_rt_lo[i]; pa < g_rt_hi[i]; pa += 4096)
+            if (pa >= IDENTITY_TOP)          /* там нет PS-страниц - map_4k безопасен */
+                vmm_map_4k(pa, pa, (g_rt_ty[i] == 5) ? (PTE_P | PTE_W)
+                                                     : (PTE_P | PTE_W | PTE_NX));
+    if (g_rt_n)
+        kprintf("[vmm] UEFI runtime: %d регионов замаплено постранично (RT-код исполняемый)\n",
+                g_rt_n);
 
     /* HHDM: тот же PDPT под PML4[256] -> физ. 0..4 ГиБ видны и там */
     g_pml4[(VMM_HHDM_BASE >> 39) & 0x1FF] = ((uint64_t)(uintptr_t)pdpt) | PTE_P | PTE_W;
@@ -127,8 +197,8 @@ void vmm_init(const bootinfo_t *bi) {
     /* ---- страница 0: НЕ замаплена (null-pointer guard) ---- */
     uint64_t *pt_lo = new_table();          /* PT для самых первых 2 МиБ */
     pd[0][0] = ((uint64_t)(uintptr_t)pt_lo) | PTE_P | PTE_W;   /* сбрасывает PS */
-    for (int i = 1; i < 512; i++)           /* i=0 пропускаем: null -> #PF */
-        pt_lo[i] = ((uint64_t)i << 12) | PTE_P | PTE_W | PTE_NX;
+    fill_slot_pt(pt_lo, 0);                 /* c уважением к RT-коду ниже 2 МиБ */
+    pt_lo[0] = 0;                           /* только i=0: null -> #PF */
 
     /* ---- зона ядра 0x200000..0x400000 постранично ---- */
     uint64_t *pt_k = new_table();

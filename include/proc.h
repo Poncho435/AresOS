@@ -24,7 +24,7 @@ int      proc_init(void);                  /* текущий поток стан
 int      proc_spawn(proc_fn fn, void *arg, const char *name, int flags); /* id или -1 */
 void     sched_tick(void);                 /* из обработчика таймера */
 uint64_t sched_ticks(void);
-void     proc_sleep(uint32_t ms);          /* тики 10 мс */
+void     proc_sleep(uint32_t ms);          /* v0.7.0: таймер 1000 Гц, 1 тик = 1 мс */
 void     proc_yield(void);
 int      proc_list(proc_info_t *out, int max);
 const char *proc_state_name(int s);

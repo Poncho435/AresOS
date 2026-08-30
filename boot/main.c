@@ -265,6 +265,37 @@ static EFI_STATUS load_kernel_segments(uint8_t *buf, uint64_t *out_entry) {
     return EFI_SUCCESS;
 }
 
+/* ===================== настройки из UEFI NVRAM (v0.7.0) =====================
+ * Ядро пишет сюда предпочтения из приложения "Настройки"
+ * (SetVariable доступен и после ExitBootServices). Загрузчик читает
+ * AresVideoMode ДО выхода из Boot Services - и сразу ставит нужный GOP-режим. */
+static const EFI_GUID gAresVarGuid = ARES_OS_VAR_GUID;
+
+typedef EFI_STATUS (EFIAPI *efi_get_variable_t)(const CHAR16 *name,
+                                                const EFI_GUID *guid,
+                                                uint32_t *attrs,
+                                                UINTN *size, void *data);
+
+/* вернуть желаемое "WxH" или 0/0 - если переменной нет / битая */
+static void read_video_mode_var(uint32_t *out_w, uint32_t *out_h) {
+    *out_w = *out_h = 0;
+    if (!gST->RuntimeServices || !gST->RuntimeServices->GetVariable) return;
+    efi_get_variable_t gv = (efi_get_variable_t)(void *)gST->RuntimeServices->GetVariable;
+    CHAR16 name[14]; const char *a = "AresVideoMode";
+    for (int i = 0; i < 14; i++) name[i] = (CHAR16)a[i];   /* + финальный 0 */
+    uint8_t buf[16];
+    UINTN sz = sizeof(buf);
+    EFI_STATUS st = gv(name, &gAresVarGuid, (uint32_t *)0, &sz, buf);
+    if (EFI_ERROR(st) || sz < 5 || sz >= sizeof(buf)) return;
+    buf[sz] = 0;                              /* "1920x1080" */
+    uint32_t w = 0, h = 0, i = 0;
+    while (buf[i] >= '0' && buf[i] <= '9') { w = w * 10 + (buf[i] - '0'); i++; }
+    if (buf[i] != 'x') return;
+    i++;
+    while (buf[i] >= '0' && buf[i] <= '9') { h = h * 10 + (buf[i] - '0'); i++; }
+    if (w >= 640 && h >= 480 && w <= 7680 && h <= 4320) { *out_w = w; *out_h = h; }
+}
+
 /* ===================== видеорежим (GOP) ===================== */
 static void setup_graphics(void) {
     EFI_GRAPHICS_OUTPUT_PROTOCOL *gop;
@@ -276,27 +307,44 @@ static void setup_graphics(void) {
         return;
     }
 
-    /* v0.6.3: предпочитаем 1920x1080 (Full HD монитор пользователя), далее
-     * по убывающей до проверенной 1024x768. Первый доступный RGB/BGR режим
-     * побеждает; если ничего нет - оставляем текущий режим прошивки. */
+    /* Собираем ВСЕ доступные RGB/BGR режимы - приложение "Настройки"
+     * покажет их списком. Параллельно ищем желаемый: сначала режим из
+     * переменной AresVideoMode (его выбрал ПОЛЬЗОВАТЕЛЬ), потом привычная
+     * цепочка предпочтений. */
+    uint32_t want_w = 0, want_h = 0;
+    read_video_mode_var(&want_w, &want_h);
+    if (want_w) {
+        serial_str("[boot] AresVideoMode из NVRAM: ");
+        serial_dec(want_w); serial_str("x"); serial_dec(want_h); serial_str("\n");
+    }
     static const uint32_t WANT[5][2] = {
         {1920, 1080}, {1600, 900}, {1366, 768}, {1280, 720}, {1024, 768},
     };
-    int chosen = -1;
-    for (int q = 0; q < 5 && chosen < 0; q++)
-        for (uint32_t m = 0; m < gop->Mode->MaxMode; m++) {
-            UINTN info_size;
-            EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info;
-            st = gop->QueryMode(gop, m, &info_size, &info);
-            if (EFI_ERROR(st)) continue;
-            if (info->HorizontalResolution == WANT[q][0] &&
-                info->VerticalResolution   == WANT[q][1] &&
-                (info->PixelFormat == PixelRedGreenBlueReserved8BitPerColor ||
-                 info->PixelFormat == PixelBlueGreenRedReserved8BitPerColor)) {
-                chosen = (int)m;
-                break;
-            }
+    g_bootinfo.modes_n = 0;
+    int chosen = -1, user_found = -1;
+    for (uint32_t m = 0; m < gop->Mode->MaxMode; m++) {
+        UINTN info_size;
+        EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info;
+        st = gop->QueryMode(gop, m, &info_size, &info);
+        if (EFI_ERROR(st)) continue;
+        if (info->PixelFormat != PixelRedGreenBlueReserved8BitPerColor &&
+            info->PixelFormat != PixelBlueGreenRedReserved8BitPerColor)
+            continue;
+        uint32_t mw = info->HorizontalResolution, mh = info->VerticalResolution;
+        int known = 0;                               /* дубликат? */
+        for (uint32_t k = 0; k < g_bootinfo.modes_n; k++)
+            if (g_bootinfo.modes[k].w == mw && g_bootinfo.modes[k].h == mh)
+                known = 1;
+        if (!known && g_bootinfo.modes_n < BOOTINFO_MAX_MODES) {
+            bootinfo_mode_t *mo = &g_bootinfo.modes[g_bootinfo.modes_n++];
+            mo->w = mw; mo->h = mh; mo->num = m; mo->_pad = 0;
         }
+        if (want_w && mw == want_w && mh == want_h) user_found = (int)m;
+        for (int q = 0; q < 5; q++)
+            if (chosen < 0 && mw == WANT[q][0] && mh == WANT[q][1])
+                chosen = (int)m;
+    }
+    if (user_found >= 0) chosen = user_found;   /* выбор пользователя - главнее */
     if (chosen >= 0) {
         st = gop->SetMode(gop, (uint32_t)chosen);
         if (EFI_ERROR(st)) log_line("[boot] SetMode failed, keeping current");
@@ -397,7 +445,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
 
     if (gST->ConOut) {
         gST->ConOut->ClearScreen(gST->ConOut);
-        screen_print(u"AresOS loader (BOOTX64.EFI) v0.6.3\r\n");
+        screen_print(u"AresOS loader (BOOTX64.EFI) v0.7.0\r\n");
     }
 
     /* графику поднимаем ПЕРВОЙ (SetMode сам очищает экран) - нужна для маркеров */
@@ -428,6 +476,12 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
     log_hex("[boot] kernel entry = ", entry);
 
     g_bootinfo.magic = BOOTINFO_MAGIC;
+
+    /* v0.7.0: Runtime Services переживают ExitBootServices - ядро через них
+     * пишет настройки в NVRAM (SetVariable) и умеет Перезагрузить (ResetSystem).
+     * ВАЖНО: мы НЕ вызываем SetVirtualAddressMap -> RT работают в ФИЗИЧЕСКИХ
+     * адресах; ядро замапит их регионы identity (см. vmm.c). */
+    g_bootinfo.rt_phys = (uint64_t)(uintptr_t)gST->RuntimeServices;
 
     /* M4: RSDP из EFI ConfigurationTable (GUID ACPI 2.0/1.0).
        На UEFI-загрузке скан 0xE0000 может НИЧЕГО не найти - это единственный
