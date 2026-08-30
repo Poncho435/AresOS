@@ -63,38 +63,52 @@ void gfx_pixel_xor(uint32_t x, uint32_t y, uint8_t mask) {
     fbp()[(uint64_t)y * g_fb.pitch + x] ^= 0xFFFFFF;
 }
 
-void gfx_fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, gfx_color_t c) {
+void gfx_fill_rect(uint32_t x_, uint32_t y_, uint32_t w_, uint32_t h_, gfx_color_t c) {
     if (!g_ready) return;
+    /* v0.6.3: КРАХ "окно за краем" - координаты приходят отрицательными
+     * (тень/рамка окна при x<0), а в uint32 они оборачиваются в ~4 ГиБ и
+     * проверка границ пропускала запись МИМО буфера (порча кучи -> паника).
+     * Клип строго в int64 до любой адресной арифметики. */
+    int64_t x = (int32_t)x_, y = (int32_t)y_;
+    int64_t w = w_, h = h_;
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x + w > (int64_t)g_fb.width)  w = (int64_t)g_fb.width - x;
+    if (y + h > (int64_t)g_fb.height) h = (int64_t)g_fb.height - y;
+    if (w <= 0 || h <= 0) return;
     uint32_t px = pack(c);
     uint64_t px2 = ((uint64_t)px << 32) | px;      /* заливаем парами - в 2 раза быстрее */
-    if (x + w > g_fb.width)  w = (x < g_fb.width)  ? g_fb.width - x : 0;
-    if (y + h > g_fb.height) h = (y < g_fb.height) ? g_fb.height - y : 0;
-    for (uint32_t row = 0; row < h; row++) {
-        uint32_t *p = lineptr(y + row) + x;
-        uint32_t left = w;
-        /* v0.6.2: нечётная голова - одиночной записью, дальше u64 ВЫРОВНЕН */
-        if (left && ((uintptr_t)p & 4)) { *p++ = px; left--; }
+    for (int64_t row = 0; row < h; row++) {
+        uint32_t *p = lineptr((uint32_t)(y + row)) + x;
+        int64_t left = w;
+        /* v0.6.2: нечётная голова - одиночной записью, дальше u64 выровнен */
+        if ((uintptr_t)p & 4) { *p++ = px; left--; }
         while (left >= 2) { *(uint64_t *)(void *)p = px2; p += 2; left -= 2; }
         if (left) *p = px;
     }
 }
 
-void gfx_gradient_v_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+void gfx_gradient_v_rect(uint32_t x_, uint32_t y_, uint32_t w_, uint32_t h_,
                          gfx_color_t top, gfx_color_t bottom) {
-    if (!g_ready || h == 0) return;
-    for (uint32_t row = 0; row < h; row++) {
-        uint32_t t = row * 255 / (h ? h : 1);
+    if (!g_ready || h_ == 0) return;
+    int64_t x = (int32_t)x_, y = (int32_t)y_;   /* v0.6.3: клип в int64 */
+    int64_t w = w_, h = h_;
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x + w > (int64_t)g_fb.width)  w = (int64_t)g_fb.width - x;
+    if (y + h > (int64_t)g_fb.height) h = (int64_t)g_fb.height - y;
+    if (w <= 0 || h <= 0) return;
+    for (int64_t row = 0; row < h; row++) {
+        uint32_t t = (uint32_t)row * 255 / (uint32_t)h;
         gfx_color_t c = {
             (uint8_t)(top.r + ((int)bottom.r - top.r) * (int)t / 255),
             (uint8_t)(top.g + ((int)bottom.g - top.g) * (int)t / 255),
             (uint8_t)(top.b + ((int)bottom.b - top.b) * (int)t / 255),
         };
         uint32_t px = pack(c);
-        if (y + row >= g_fb.height) break;
-        uint32_t *line = lineptr(y + row);
-        uint32_t ww = (x + w > g_fb.width) ? (g_fb.width > x ? g_fb.width - x : 0) : w;
-        for (uint32_t col = 0; col < ww; col++)
-            line[x + col] = px;
+        uint32_t *line = lineptr((uint32_t)(y + row)) + x;
+        for (int64_t col = 0; col < w; col++)
+            line[col] = px;
     }
 }
 
@@ -105,23 +119,29 @@ void gfx_frame_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, gfx_color_t 
     gfx_fill_rect(x + w - 1, y, 1, h, c);
 }
 
-void gfx_text(uint32_t x, uint32_t y, const char *s, gfx_color_t fg) {
+void gfx_text(uint32_t x_, uint32_t y_, const char *s, gfx_color_t fg) {
     if (!g_ready) return;
     uint32_t px = pack(fg);
+    /* v0.6.3: окно может быть за левым/верхним краем - считаем в int64,
+     * иначе отрицательный x оборачивается и портит чужие строки */
+    int64_t x = (int32_t)x_;
+    int64_t y = (int32_t)y_;
     int st = 0;
     for (; *s; s++, x += 8) {
         int slot = fontex_slot(&st, (uint8_t)*s);
         if (slot < 0) { x -= 8; continue; }   /* ждём второй байт UTF-8 */
         const uint8_t *glyph = fontex_glyph(slot);
-        for (uint32_t gy = 0; gy < 8; gy++) {
-            if (y + gy >= g_fb.height) break;
+        for (int64_t gy = 0; gy < 8; gy++) {
+            if (y + gy < 0) continue;
+            if (y + gy >= (int64_t)g_fb.height) break;
             uint8_t bits = glyph[gy];
             if (!bits) continue;
-            uint32_t *line = lineptr(y + gy);   /* v0.6.2: было fbp() - текст
-                                                   шёл мимо бэкбуфера прямо в
-                                                   видеопамять и затирался flush */
-            for (uint32_t gx = 0; gx < 8; gx++)
-                if ((bits >> gx) & 1 && x + gx < g_fb.width)
+            uint32_t *line = lineptr((uint32_t)(y + gy));  /* v0.6.2: lineptr,
+                                                   а НЕ fbp() - иначе текст
+                                                   затирался dirty_flush */
+            for (int64_t gx = 0; gx < 8; gx++)
+                if ((bits >> gx) & 1 && x + gx >= 0 &&
+                    x + gx < (int64_t)g_fb.width)
                     line[x + gx] = px;
         }
     }
@@ -148,11 +168,15 @@ void gfx_blit_rows_region(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
     if (y + h > g_fb.height) h = (y < g_fb.height) ? g_fb.height - y : 0;
     for (uint32_t r = 0; r < h; r++) {
         uint32_t px = rowpx[y + r];
-        uint64_t px2 = ((uint64_t)px << 32) | px;
-        uint32_t *line = lineptr(y + r);
-        uint32_t col = 0;
-        for (; col + 2 <= w; col += 2) *(uint64_t *)(void *)(line + x + col) = px2;
-        if (col < w) line[x + col] = px;
+        uint32_t *p = lineptr(y + r) + x;
+        uint32_t left = w;
+        /* v0.6.3: как в fill - нечётная голова одиночной, пары выровнены */
+        if (left && ((uintptr_t)p & 4)) { *p++ = px; left--; }
+        while (left >= 2) {
+            uint64_t px2 = ((uint64_t)px << 32) | px;
+            memcpy(p, &px2, 8); p += 2; left -= 2;
+        }
+        if (left) *p = px;
     }
 }
 void gfx_blit_rows(const uint32_t *rowpx) {
@@ -237,15 +261,20 @@ static inline void blend_px_at(uint32_t *line, uint32_t x, gfx_color_t c, uint8_
     line[x] = pack(d);
 }
 
-void gfx_blend_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+void gfx_blend_rect(uint32_t x_, uint32_t y_, uint32_t w_, uint32_t h_,
                     gfx_color_t c, uint8_t a) {
     if (!g_ready) return;
-    if (x + w > g_fb.width)  w = (x < g_fb.width)  ? g_fb.width - x : 0;
-    if (y + h > g_fb.height) h = (y < g_fb.height) ? g_fb.height - y : 0;
-    for (uint32_t row = 0; row < h; row++) {
-        uint32_t *line = lineptr(y + row);
-        for (uint32_t col = 0; col < w; col++)
-            blend_px_at(line, x + col, c, a);
+    int64_t x = (int32_t)x_, y = (int32_t)y_;   /* v0.6.3: клип в int64 */
+    int64_t w = w_, h = h_;
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x + w > (int64_t)g_fb.width)  w = (int64_t)g_fb.width - x;
+    if (y + h > (int64_t)g_fb.height) h = (int64_t)g_fb.height - y;
+    if (w <= 0 || h <= 0) return;
+    for (int64_t row = 0; row < h; row++) {
+        uint32_t *line = lineptr((uint32_t)(y + row)) + x;
+        for (int64_t col = 0; col < w; col++)
+            blend_px_at(line, (uint32_t)col, c, a);
     }
 }
 

@@ -276,21 +276,27 @@ static void setup_graphics(void) {
         return;
     }
 
-    /* ищем 1024x768; если нет - оставляем текущий режим */
+    /* v0.6.3: предпочитаем 1920x1080 (Full HD монитор пользователя), далее
+     * по убывающей до проверенной 1024x768. Первый доступный RGB/BGR режим
+     * побеждает; если ничего нет - оставляем текущий режим прошивки. */
+    static const uint32_t WANT[5][2] = {
+        {1920, 1080}, {1600, 900}, {1366, 768}, {1280, 720}, {1024, 768},
+    };
     int chosen = -1;
-    for (uint32_t m = 0; m < gop->Mode->MaxMode; m++) {
-        UINTN info_size;
-        EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info;
-        st = gop->QueryMode(gop, m, &info_size, &info);
-        if (EFI_ERROR(st)) continue;
-        if (info->HorizontalResolution == 1024 &&
-            info->VerticalResolution == 768 &&
-            (info->PixelFormat == PixelRedGreenBlueReserved8BitPerColor ||
-             info->PixelFormat == PixelBlueGreenRedReserved8BitPerColor)) {
-            chosen = (int)m;
-            break;
+    for (int q = 0; q < 5 && chosen < 0; q++)
+        for (uint32_t m = 0; m < gop->Mode->MaxMode; m++) {
+            UINTN info_size;
+            EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info;
+            st = gop->QueryMode(gop, m, &info_size, &info);
+            if (EFI_ERROR(st)) continue;
+            if (info->HorizontalResolution == WANT[q][0] &&
+                info->VerticalResolution   == WANT[q][1] &&
+                (info->PixelFormat == PixelRedGreenBlueReserved8BitPerColor ||
+                 info->PixelFormat == PixelBlueGreenRedReserved8BitPerColor)) {
+                chosen = (int)m;
+                break;
+            }
         }
-    }
     if (chosen >= 0) {
         st = gop->SetMode(gop, (uint32_t)chosen);
         if (EFI_ERROR(st)) log_line("[boot] SetMode failed, keeping current");
@@ -391,7 +397,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
 
     if (gST->ConOut) {
         gST->ConOut->ClearScreen(gST->ConOut);
-        screen_print(u"AresOS loader (BOOTX64.EFI) v0.6.2\r\n");
+        screen_print(u"AresOS loader (BOOTX64.EFI) v0.6.3\r\n");
     }
 
     /* графику поднимаем ПЕРВОЙ (SetMode сам очищает экран) - нужна для маркеров */
@@ -466,7 +472,8 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
 hang:
     log_line("[boot] FATAL - system halted");
     /* аварийное состояние: полосы-"усы" ниже маркеров, чтобы было видно на фото */
-    for (uint32_t yy = 128; yy < 768; yy += 16)
+    uint32_t band_h = g_bootinfo.fb.height ? g_bootinfo.fb.height : 768;
+    for (uint32_t yy = 128; yy < band_h; yy += 16)
         diag_band(yy, yy + 8, 0xC0, 0x20, 0x00);
     for (;;) __asm__ volatile ("hlt");
 }

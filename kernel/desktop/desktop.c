@@ -241,7 +241,7 @@ static void panel_draw(void) {
     gfx_fill_rect(0, PANEL_H - 1, g_scr_w, 1, C_PLINE);
     gfx_text_bold(14, 13, "AresOS", C_ACCENT);
     gfx_blend_round_rect(86, 8, 62, 18, 6, C_GLASS, 170);
-    gfx_text(94, 13, "v0.6.2", C_TXT2);
+    gfx_text(94, 13, "v0.6.3", C_TXT2);
     static const char *BTN[LAUNCH_N] = { "О системе", "Задачи", "Логи", "Файлы" };
     static const gfx_color_t BC[LAUNCH_N] = { C_BLUE, C_ACCENT, C_GREEN, C_YELLOW };
     int32_t mx = mouse_x(), my = mouse_y();
@@ -411,7 +411,7 @@ static void about_draw(int32_t x, int32_t y, int32_t w) {
     (void)w;
     int32_t cx = x + 16;
     int32_t yy = y + 14;
-    gfx_text_bold(cx, yy, "Ядро AresOS 0.6.2 (x86-64)", C_TXT); yy += 18;
+    gfx_text_bold(cx, yy, "Ядро AresOS 0.6.3 (x86-64)", C_TXT); yy += 18;
     gfx_text(cx, yy, g_ram_line, C_TXT2); yy += 14;
     gfx_text(cx, yy, "Окна = процессы. Куча/VMM живы, PE32+ в ядре", C_TXT2); yy += 14;
     if (g_pe_line[0]) { gfx_text(cx, yy, g_pe_line, C_GREEN); yy += 14; }
@@ -583,9 +583,9 @@ static const fitem_t FS_ROOT[] = {
     { "Документы", 1, 1, 0 },
     { "Система",   1, 2, 0 },
     { "README.TXT", 0, 0,
-      "AresOS v0.6.2\n64-битная ОС голого железа: свой загрузчик UEFI,\nсвоё ядро, свой графический рабочий стол.\nПроводник показывает демо-файлы ИЗ ПАМЯТИ -\nдрайвер диска и настоящая ФС придут на этапе M6.\n" },
+      "AresOS v0.6.3\n64-битная ОС голого железа: свой загрузчик UEFI,\nсвоё ядро, свой графический рабочий стол.\nПроводник показывает демо-файлы ИЗ ПАМЯТИ -\nдрайвер диска и настоящая ФС придут на этапе M6.\n" },
     { "version.txt", 0, 0,
-      "kernel 0.6.2 (x86-64)\nAPIC/PIC 100 Гц, PMM+VMM+heap, PE32+ loader\nокна-процессы, стекло-UI, двойная буферизация\n" },
+      "kernel 0.6.3 (x86-64)\nAPIC/PIC 100 Гц, PMM+VMM+heap, PE32+ loader\nокна-процессы, стекло-UI, двойная буферизация\n" },
     { "testpe.exe", 0, 0,
       "PE32+ тестовая программа (проверка M3):\nрисует шахматку 96x96 прямо на рабочем столе\nи возвращает 0xA2E5. Загружается строго по\nспецификации PE/COFF (секции, релоки, импорты).\n" },
 };
