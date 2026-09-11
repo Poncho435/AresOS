@@ -6,6 +6,8 @@
 #include "serial.h"
 #include "kprintf.h"
 #include "fb_console.h"
+#include "session.h"
+#include "rtc.h"
 #include "pmm.h"
 #include "vmm.h"
 #include "heap.h"
@@ -64,7 +66,7 @@ static void print_memory_summary(const bootinfo_t *bi) {
     kprintf("[mem] usable RAM total: %lu MiB\n", usable >> 20);
 }
 
-#define KERNEL_VERSION "0.7.0"
+#define KERNEL_VERSION "0.8.0"
 
 /* ---- фоновые демоны M5 (диспетчер задач покажет их в списке) ---- */
 #include "gfx.h"
@@ -99,7 +101,9 @@ static bootinfo_t *g_bi;
 static uint64_t   g_total_mib, g_free_mib;
 static void desktop_proc(void *arg) {
     (void)arg;
-    desktop_enter(g_bi, g_total_mib, g_free_mib);   /* не возвращается */
+    /* v0.8.0: сначала загрузочный экран/установка/блокировка/вход... */
+    session_run(g_bi, g_total_mib, g_free_mib);
+    desktop_enter(g_bi, g_total_mib, g_free_mib);   /* ...потом стол (не возвращается) */
 }
 
 void kmain(bootinfo_t *bi) {
@@ -152,8 +156,9 @@ void kmain(bootinfo_t *bi) {
     heap_init();           /* арена кучи через VMM */
     heap_stress_test();    /* DoD M3: миллион случайных alloc/free */
     pe_demo_init(&bi->fb); /* готовим контекст для TESTPE.EXE (запустит десктоп) */
-    efi_rt_init(bi);       /* v0.7.0: NVRAM-настройки + ResetSystem */
-    vfs_init();            /* v0.7.0: ramfs - настоящие папки/файлы в памяти */
+    efi_rt_init(bi);       /* NVRAM-настройки + ResetSystem */
+    vfs_init();            /* ramfs - настоящие папки/файлы в памяти */
+    rtc_log_boot();        /* v0.8.0: настоящие часы (экран блокировки/панель) */
 
     /* дымовой тест аллокатора */
     uint64_t a = pmm_alloc_page();

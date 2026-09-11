@@ -92,11 +92,11 @@ void mouse_init(void) {
     g_wheel_capable = (devid == 0x03);
 
     ok &= mouse_write(0xF3);      /* sample rate... */
-    ok &= mouse_write(100);       /* ...100 Гц */
+    ok &= mouse_write(200);       /* ...200 Гц: в 2 раза плавнее (v0.8.0) */
     ok &= mouse_write(0xF4);      /* включить поток данных */
 
     if (ok)
-        kprintf("[mouse] PS/2 mouse online (100 Hz, IRQ12, колесо: %s)\n",
+        kprintf("[mouse] PS/2 mouse online (200 Hz, IRQ12, колесо: %s)\n",
                 g_wheel_capable ? "ДА" : "нет");
     else
         kprintf("[mouse] WARNING: mouse did not ACK all commands\n");

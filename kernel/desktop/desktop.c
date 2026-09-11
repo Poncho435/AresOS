@@ -1,17 +1,19 @@
-/* AresOS - рабочий стол v0.7.0.
+/* AresOS - рабочий стол v0.8.0.
  *  НОВОЕ в этой версии:
- *  - УСТАНОВЩИК при запуске: создаёт системные файлы в ramfs с прогрессом,
- *    плюс "Центр обновления" (честные подписи: сеть - этап M7)
- *  - НАСТРОЙКИ: разрешение экрана (через UEFI NVRAM + перезагрузка),
- *    масштаб интерфейса 100/150/200%, обои (5 вариантов), скорость мыши
- *  - VFS/ramfs: НАСТОЯЩИЕ папки и файлы в памяти: создать папку/файл,
- *    открыть, ПРОЧИТАТЬ и даже ДОПИСАТЬ (мини-редактор, F2 = сохранить)
- *  - 60 FPS: таймер 1000 Гц (тик 1 мс), пэйсинг кадров 16 мс, курсор
- *    рисуется мгновенно при пробуждении (IRQ12/IRQ1/PIT)
- *  - мышь: скорость 50..250% с накоплением дробной части + ускорение x2
- *  - русская раскладка клавиатуры (Alt+Shift) - можно писать имена файлов
- *  Проверенная механика v0.6.x сохранена: двойная буферизация,
- *  окна-процессы, Alt+F4/Esc, колесо IntelliMouse, стекло-UI. */
+ *  - ЗАГРУЗОЧНЫЙ ЭКРАН перед столом (session.c): Установить / Обновить /
+ *    Поиск неисправностей / Live - стрелки, Tab, Enter или мышь
+ *  - Мастер установки: прогресс -> имя учётной записи -> пароль (можно
+ *    пропустить) -> готово. Учётка живёт в UEFI NVRAM (переживает рестарт!)
+ *  - Установлено = сплеш с логотипом -> ЭКРАН БЛОКИРОВКИ (настоящие часы
+ *    RTC, открыть: любая клавиша / клик / потянуть вверх) -> ВХОД (аватар,
+ *    имя, пароль-звёздочки). F8 = вернуться в загрузочное меню
+ *  - КУРСОР БЕЗ МЕРЦАНИЯ: впечатывается в бэкбуфер перед сбросом кадра,
+ *    а при простом движении мыши сбрасывается микро-прямоугольник 28x38 -
+ *    курсор летает на полных 60 fps, ни один кадр его не теряет
+ *  - memcpy/memset 8-байтными словами: сброс кадра 8 МиБ стал в разы быстрее
+ *  - мышь 200 Гц, панель показывает НАСТОЯЩЕЕ время RTC и чип пользователя
+ *  Проверенная механика: двойная буферизация, окна-процессы, Alt+F4/Esc,
+ *  колесо IntelliMouse, стекло-UI, ramfs VFS с редактором, NVRAM-настройки. */
 #include "desktop.h"
 #include "gfx.h"
 #include "mouse.h"
@@ -25,6 +27,8 @@
 #include "vfs.h"
 #include "efi_rt.h"
 #include "fb_console.h"
+#include "session.h"
+#include "rtc.h"
 #include <stdint.h>
 #include <string.h>
 
@@ -274,17 +278,19 @@ static void bg_cache_build(void) {
 static uint64_t g_last_sec = 0xFFFFFFFFFFFFFFFFULL;
 
 static void clock_draw(void) {
-    uint32_t s = (uint32_t)g_last_sec;
+    /* v0.8.0: часы показывают НАСТОЯЩЕЕ время из RTC, а не аптайм */
+    rtc_time_t rt;
+    rtc_read(&rt);
     char buf[16];
     char *p = buf;
-    *p++ = (char)('0' + (s / 36000) % 10);
-    *p++ = (char)('0' + (s / 3600) % 10);
+    *p++ = (char)('0' + rt.hour / 10);
+    *p++ = (char)('0' + rt.hour % 10);
     *p++ = ':';
-    *p++ = (char)('0' + (s / 600) % 6);
-    *p++ = (char)('0' + (s / 60) % 10);
+    *p++ = (char)('0' + rt.min / 10);
+    *p++ = (char)('0' + rt.min % 10);
     *p++ = ':';
-    *p++ = (char)('0' + (s / 10) % 6);
-    *p++ = (char)('0' + s % 10);
+    *p++ = (char)('0' + rt.sec / 10);
+    *p++ = (char)('0' + rt.sec % 10);
     *p = 0;
     int32_t cx = (int32_t)g_scr_w - SC(100);
     gfx_blend_round_rect(cx, SC(7), SC(88), SC(19), SC(8), C_GLASS, 200);
@@ -299,8 +305,8 @@ static void panel_draw(void) {
     gfx_fill_rect(0, PANEL_H - 1, g_scr_w, 1, C_PLINE);
     TB(SC(14), TY(0, PANEL_H), "AresOS", C_ACCENT);
     gfx_blend_round_rect(SC(86), SC(8), SC(66), SC(18), SC(6), C_GLASS, 170);
-    T(SC(94), TY(SC(8), SC(18)), "v0.7.0", C_TXT2);
-    static const char *BTN[LAUNCH_N] = { "Инфо", "Задачи", "Логи", "Файлы", "Опции", "Устан." };
+    T(SC(94), TY(SC(8), SC(18)), "v0.8.0", C_TXT2);
+    static const char *BTN[LAUNCH_N] = { "Инфо", "Задачи", "Логи", "Файлы", "Опции", "Обновл." };
     static const gfx_color_t BC[LAUNCH_N] = { C_BLUE, C_ACCENT, C_GREEN, C_YELLOW, C_CYAN, C_LIME };
     static const int A2L[LAUNCH_N] = { APP_ABOUT, APP_TASKMAN, APP_LOGS, APP_FILES, APP_SETTINGS, APP_SETUP };
     int32_t mx = mouse_x(), my = mouse_y();
@@ -316,6 +322,22 @@ static void panel_draw(void) {
     }
     /* индикатор раскладки RU/EN слева от часов */
     int32_t lx = (int32_t)g_scr_w - SC(100) - SC(42);
+    /* v0.8.0: чип вошедшего пользователя (если вошёл с экрана входа) */
+    if (session_user_present()) {
+        const char *un = session_user_name();
+        int gl = 0; for (const char *q = un; *q && gl < 12; q++) if ((*q & 0xC0) != 0x80) gl++;
+        /* обрезанная копия имени (не больше 12 глифов) */
+        char nb[32]; int bi2 = 0, gg = 0;
+        for (const char *q = un; *q && gg < 12 && bi2 < 27; q++, bi2++) {
+            nb[bi2] = *q; if ((*q & 0xC0) != 0x80) gg++;
+        }
+        nb[bi2] = 0;
+        int32_t cw = SC(30) + gg * ADV;
+        lx -= cw + SC(8);
+        gfx_blend_round_rect(lx, SC(7), cw, SC(19), SC(8), C_GLASS, 200);
+        gfx_fill_round_rect(lx + SC(6), TY(0, PANEL_H) + 1, SC(8), SC(8), SC(4), C_BLUE);
+        T(lx + SC(20), TY(SC(7), SC(19)), nb, C_TXT);
+    }
     gfx_blend_round_rect(lx, SC(7), SC(34), SC(19), SC(8), C_GLASS, 200);
     T(lx + SC(9), TY(SC(7), SC(19)), keyboard_ru() ? "RU" : "EN", keyboard_ru() ? C_ACCENT : C_TXT2);
     clock_draw();
@@ -402,7 +424,7 @@ DICON[LAUNCH_N] = {
     { "TM", "Задачи",     APP_TASKMAN,  GFX_RGB(0xFF, 0x9E, 0x49) },
     { ">_", "Логи",       APP_LOGS,     GFX_RGB(0x4F, 0xC3, 0x7B) },
     { "*",  "Настройки",  APP_SETTINGS, GFX_RGB(0x56, 0xC2, 0xE8) },
-    { "U",  "Установка",  APP_SETUP,    GFX_RGB(0x28, 0xC8, 0x40) },
+    { "Up", "Обновление", APP_SETUP,    GFX_RGB(0x28, 0xC8, 0x40) },
 };
 
 static int desk_hit(int32_t mx, int32_t my) {
@@ -500,17 +522,22 @@ static void about_draw(int32_t x, int32_t y, int32_t w) {
     int32_t cx = x + SC(16);
     int32_t yy = y + SC(12);
     int LH = FNT + SC(6);
-    TB(cx, yy, "Ядро AresOS 0.7.0 (x86-64)", C_TXT); yy += LH + SC(4);
+    TB(cx, yy, "Ядро AresOS 0.8.0 (x86-64)", C_TXT); yy += LH + SC(4);
     T(cx, yy, g_ram_line, C_TXT2); yy += LH;
     T(cx, yy, "Окна = процессы. Куча/VMM живы, PE32+ в ядре", C_TXT2); yy += LH;
     if (g_pe_line[0]) { T(cx, yy, g_pe_line, C_GREEN); yy += LH; }
+    if (session_user_present()) {
+        char sl[80]; char *p = sl;
+        pcat(&p, "Сеанс: "); pcat(&p, session_user_name());
+        T(cx, yy, sl, C_CYAN); yy += LH;
+    }
     yy += SC(4);
     gfx_fill_rect(cx, yy, SC(300), 1, C_PLINE); yy += SC(8);
-    TB(cx, yy, "Новое в v0.7.0:", C_ACCENT); yy += LH;
-    T(cx, yy, "Установщик при запуске + Центр обновления.", C_TXT2); yy += LH;
-    T(cx, yy, "Настройки: экран, масштаб, обои, мышь (F5).", C_TXT2); yy += LH;
-    T(cx, yy, "Проводник: свои папки и файлы, чтение/запись.", C_TXT2); yy += LH;
-    T(cx, yy, "60 FPS и плавная мышь. Раскладка RU - Alt+Shift.", C_TXT2); yy += LH;
+    TB(cx, yy, "Новое в v0.8.0:", C_ACCENT); yy += LH;
+    T(cx, yy, "Загрузочный экран: установка / обновление / диагностика.", C_TXT2); yy += LH;
+    T(cx, yy, "Учётная запись + пароль. Экран блокировки и вход.", C_TXT2); yy += LH;
+    T(cx, yy, "Настоящее время RTC на панели. Мышь без мерцаний.", C_TXT2); yy += LH;
+    T(cx, yy, "Настройки (F5): экран, масштаб, обои, мышь.", C_TXT2); yy += LH;
     yy += SC(2);
     T(cx, yy, "Закрыть окно: красная x, Esc или Alt+F4.", C_TXT2);
 }
@@ -1148,7 +1175,7 @@ static void settings_draw(int idx, int32_t x, int32_t y, int32_t w, int32_t h) {
         break; }
     case 4: { /* ------- Система ------- */
         TB(cx, yy, "Система", C_TXT); yy += FNT + SC(8);
-        T(cx, TY(yy, SC(16)), "AresOS v0.7.0 - ядро 0.7.0 (x86-64)", C_TXT); yy += SC(16);
+        T(cx, TY(yy, SC(16)), "AresOS v0.8.0 - ядро 0.8.0 (x86-64)", C_TXT); yy += SC(16);
         T(cx, TY(yy, SC(16)), g_ram_line, C_TXT2); yy += SC(16);
         {
             char up[64], n1[12], n2[12]; char *p = up;
@@ -1288,7 +1315,6 @@ static int settings_click(int idx, int32_t mx, int32_t my) {
 /* ================= УСТАНОВКА (автозапуск при старте) =================
  * Пишет системные файлы в ramfs - НАСТОЯЩИЕ действия, прогресс виден.
  * Честная подпись: диск (M6) ещё впереди, всё живёт в оперативной памяти. */
-#define SETUP_STEPS 9
 static int      g_inst_win  = -1;     /* окно, идёт установка (или -1) */
 static int      g_inst_step;
 static uint64_t g_inst_t0;
@@ -1296,7 +1322,7 @@ static int      g_upd_win   = -1;     /* окно, идёт "проверка о
 static uint64_t g_upd_t0;
 #define UPD_TICKS 1400                /* мс "поиска обновлений" */
 
-static void setup_do_step(int s) {
+void setup_steps_run(int s) {
     int r = VFS_ROOT;
     switch (s) {
     case 0: if (vfs_find(r, "Система") == VFS_NONE) vfs_mkdir(r, "Система");
@@ -1319,7 +1345,7 @@ static void setup_do_step(int s) {
         if (d != VFS_NONE && vfs_find(d, "config.ini") == VFS_NONE) {
             int f = vfs_create(d, "config.ini");
             if (f != VFS_NONE)
-                vfs_write(f, "theme=glass-aurora\nfont=8x8-cyrillic\nmouse=ps2+wheel\ntimer=1000Hz\nversion=0.7.0\n", 80);
+                vfs_write(f, "theme=glass-aurora\nfont=8x8-cyrillic\nmouse=ps2+wheel\ntimer=1000Hz\nversion=0.8.0\n", 80);
         }
         kprintf("[setup] /Система/config.ini\n"); break; }
     case 4: if (vfs_find(r, "Документы") == VFS_NONE) vfs_mkdir(r, "Документы");
@@ -1342,14 +1368,14 @@ static void setup_do_step(int s) {
         if (vfs_find(r, "README.TXT") == VFS_NONE) {
             int f = vfs_create(r, "README.TXT");
             if (f != VFS_NONE)
-                vfs_write(f, "AresOS v0.7.0\n64-битная ОС голого железа: свой загрузчик UEFI,\nсвоё ядро, свой графический рабочий стол.\nЭти файлы - настоящие, в памяти (ramfs):\nсоздавай свои папки и файлы прямо в Проводнике!\n", 182);
+                vfs_write(f, "AresOS v0.8.0\n64-битная ОС голого железа: свой загрузчик UEFI,\nсвоё ядро, свой графический рабочий стол.\nЭти файлы - настоящие, в памяти (ramfs):\nсоздавай свои папки и файлы прямо в Проводнике!\n", 182);
         }
         kprintf("[setup] /README.TXT\n"); break;
     case 8:
         if (vfs_find(r, "version.txt") == VFS_NONE) {
             int f = vfs_create(r, "version.txt");
             if (f != VFS_NONE)
-                vfs_write(f, "kernel 0.7.0 (x86-64)\nAPIC/PIC 1000 Гц, PMM+VMM+heap, PE32+ loader\nокна-процессы, стекло-UI, ramfs-ФС, NVRAM-настройки\n", 122);
+                vfs_write(f, "kernel 0.8.0 (x86-64)\nAPIC/PIC 1000 Гц, PMM+VMM+heap, PE32+ loader\nокна-процессы, стекло-UI, ramfs-ФС, NVRAM-настройки\n", 122);
         }
         kprintf("[setup] /version.txt\n"); break;
     }
@@ -1362,27 +1388,38 @@ static void setup_draw(int idx, int32_t x, int32_t y, int32_t w, int32_t h) {
     int LH = FNT + SC(7);
     int32_t yy;
 
-    if (W->aux == 0) {          /* ---------- Приветствие ---------- */
+    if (W->aux == 0) {          /* ----- Обновление и восстановление (v0.8.0) ----- */
         yy = y + SC(16);
-        TB(cx, yy, "Добро пожаловать в AresOS v0.7.0!", C_TXT); yy += LH + SC(6);
-        T(cx, yy, "Мастер установит систему: создаст папки и системные", C_TXT2); yy += LH;
-        T(cx, yy, "файлы, настроит рабочий стол. Это займёт пару секунд.", C_TXT2); yy += LH;
-        yy += SC(4);
-        T(cx, yy, "Честно: файлы пока живут в оперативной памяти (ramfs) -", C_ACCENT); yy += LH;
-        T(cx, yy, "драйвер диска и сохранение на диск придут на этапе M6.", C_ACCENT); yy += LH;
-        yy += SC(6);
+        TB(cx, yy, "Обновление и восстановление", C_TXT); yy += LH + SC(6);
         if (vfs_find(VFS_ROOT, "Система") != VFS_NONE) {
-            T(cx, yy, "Система УЖЕ установлена - можно переустановить.", C_GREEN); yy += LH;
+            T(cx, yy, "Система установлена на этот сеанс. Можно проверить", C_TXT2); yy += LH;
+            T(cx, yy, "обновления или переустановить системные файлы.", C_TXT2); yy += LH;
+        } else {
+            T(cx, yy, "Live-режим: система ещё НЕ установлена. Кнопка ниже", C_TXT2); yy += LH;
+            T(cx, yy, "создаст системные папки и файлы прямо сейчас.", C_TXT2); yy += LH;
         }
+        yy += SC(4);
+        T(cx, yy, "Полная установка с созданием учётной записи - на", C_TXT2); yy += LH;
+        T(cx, yy, "загрузочном экране (перезагрузи и не пропусти меню,F8).", C_TXT2); yy += LH;
+        yy += SC(6);
+        T(cx, yy, "Честно: файлы пока живут в памяти (ramfs) до этапа M6.", C_ACCENT); yy += LH;
         int32_t by = y + h - SC(66);
-        btn_draw(cx, by, SC(170), SC(30), "Установить", C_LIME, 0);
-        btn_draw(cx, by + SC(38), SC(170), SC(26), "Пропустить", C_ROW_ALT, 0);
-        btn_draw(cx + SC(184), by, SC(170), SC(30), "Центр обновления", C_CYAN, 0);
-        T(cx + SC(184), TY(by + SC(38), SC(26)), "Установщик открывается при", C_TXT2);
-        T(cx + SC(184), TY(by + SC(38), SC(26)) + FNT + SC(2), "каждой загрузке.", C_TXT2);
+        int live = (vfs_find(VFS_ROOT, "Система") == VFS_NONE);
+        btn_draw(cx, by, SC(170), SC(30), "Проверить обновления", C_CYAN, 0);
+        btn_draw(cx + SC(184), by, SC(170), SC(30),
+                 live ? "Установить" : "Переустановить", C_LIME, 0);
+        btn_draw(cx, by + SC(38), SC(170), SC(26), "Закрыть", C_ROW_ALT, 0);
+        if (session_user_present()) {
+            char ul[64]; char *p = ul;
+            pcat(&p, "Учётная запись: "); pcat(&p, session_user_name());
+            T(cx + SC(184), TY(by + SC(38), SC(26)), ul, C_BLUE);
+        } else {
+            T(cx + SC(184), TY(by + SC(38), SC(26)), "Вход выполнен без", C_TXT2);
+            T(cx + SC(184), TY(by + SC(38), SC(26)) + FNT + SC(2), "учётной записи (Live).", C_TXT2);
+        }
     } else if (W->aux == 1) {   /* ---------- Прогресс ---------- */
         yy = y + SC(16);
-        TB(cx, yy, "Установка системы...", C_TXT); yy += LH + SC(10);
+        TB(cx, yy, "Установка системных файлов...", C_TXT); yy += LH + SC(10);
         int32_t bx = cx, bwd = w - SC(40);
         gfx_fill_round_rect(bx, yy, bwd, SC(22), SC(8), C_BAR_BG);
         int pct = g_inst_step * 100 / SETUP_STEPS;
@@ -1423,9 +1460,9 @@ static void setup_draw(int idx, int32_t x, int32_t y, int32_t w, int32_t h) {
         (void)h;
     } else if (W->aux == 2) {   /* ---------- Готово ---------- */
         yy = y + SC(18);
-        TB(cx, yy, "AresOS установлена!", C_GREEN); yy += LH + SC(8);
-        T(cx, yy, "Созданы папки и файлы: открой Проводник (жёлтую иконку)", C_TXT2); yy += LH;
-        T(cx, yy, "и загляни в /Система и /Документы - всё по-настоящему.", C_TXT2); yy += LH;
+        TB(cx, yy, "Системные файлы на месте!", C_GREEN); yy += LH + SC(8);
+        T(cx, yy, "Проверь Проводник (жёлтая иконка): /Система и", C_TXT2); yy += LH;
+        T(cx, yy, "/Документы - всё по-настоящему, из ramfs.", C_TXT2); yy += LH;
         yy += SC(8);
         T(cx, yy, "Дальше по желанию: Настройки (F5) - разрешение экрана,", C_TXT2); yy += LH;
         T(cx, yy, "масштаб интерфейса, обои и скорость мыши.", C_TXT2); yy += LH;
@@ -1437,7 +1474,7 @@ static void setup_draw(int idx, int32_t x, int32_t y, int32_t w, int32_t h) {
         TB(cx, yy, "Центр обновления AresOS", C_TXT); yy += LH + SC(6);
         {
             char vl[64]; char *p = vl;
-            pcat(&p, "Текущая версия: v0.7.0 (ядро 0.7.0)");
+            pcat(&p, "Текущая версия: v0.8.0 (ядро 0.8.0)");
             T(cx, yy, vl, C_TXT2); yy += LH;
         }
         yy += SC(4);
@@ -1478,18 +1515,18 @@ static int setup_click(int idx, int32_t mx, int32_t my) {
     if (W->aux == 0) {
         int32_t by = y + h - SC(66);
         if (mx >= cx && mx < cx + SC(170) && my >= by + SC(38) && my < by + SC(38) + SC(26)) {
-            close_window(idx);                 /* Пропустить - просто закрыть окно */
+            close_window(idx);                 /* Закрыть */
             return 1;
         }
         if (mx >= cx && mx < cx + SC(170) && my >= by && my < by + SC(30)) {
-            /* поехали: копим минимальные сиды, включаем прогресс */
-            W->aux = 1;
-            g_inst_win = idx; g_inst_step = 0; g_inst_t0 = sched_ticks();
-            kprintf("[setup] === установка AresOS v0.7.0 началась ===\n");
+            W->aux = 3; W->aux2 = 0;           /* Проверить обновления */
             return 1;
         }
         if (mx >= cx + SC(184) && mx < cx + SC(354) && my >= by && my < by + SC(30)) {
-            W->aux = 3; W->aux2 = 0;
+            /* Установить/Переустановить: сидим файлы с прогрессом */
+            W->aux = 1;
+            g_inst_win = idx; g_inst_step = 0; g_inst_t0 = sched_ticks();
+            kprintf("[setup] === запись системных файлов AresOS v0.8.0 ===\n");
             return 1;
         }
     } else if (W->aux == 2) {
@@ -1531,7 +1568,7 @@ static int setup_periodic(void) {
         } else {
             uint64_t t = sched_ticks();
             if (g_inst_step < SETUP_STEPS && t - g_inst_t0 >= 260) {
-                setup_do_step(g_inst_step);
+                setup_steps_run(g_inst_step);
                 g_inst_step++;
                 g_inst_t0 = t;
                 changed = 1;
@@ -1550,7 +1587,7 @@ static int setup_periodic(void) {
         } else if (sched_ticks() - g_upd_t0 >= UPD_TICKS) {
             W->aux2 = 2;                           /* результат "обновлений нет" */
             g_upd_win = -1;
-            kprintf("[setup] обновлений не найдено - v0.7.0 последняя\n");
+            kprintf("[setup] обновлений не найдено - v0.8.0 последняя\n");
             changed = 1;
         } else changed = 1;                        /* полоска ползёт - перерисовка */
     }
@@ -1570,7 +1607,12 @@ static void draw_content(int idx, int32_t x, int32_t y, int32_t w, int32_t h) {
     }
 }
 
-/* ---------------- курсор: РИСУЕТСЯ НА РЕАЛЬНЫЙ ЭКРАН поверх буфера ---------------- */
+/* ---------------- курсор: КОМПОЗИТИНГ в бэкбуфер (v0.8.0) ----------------
+ * Раньше курсор рисовался НАПРЯМУЮ в видеопамять между сбросами кадра -
+ * поэтому на любой перерисовке он пропадал на долю кадра и "мигал"
+ * (особенно заметно на прогрессе установки и подсветках). Теперь курсор
+ * впечатывается в бэкбуфер ПЕРЕД сбросом: в каждом кадре видеопамяти
+ * курсор есть ВСТРОЕННЫЙ, и он не может пропасть ни на мгновение. */
 static const uint16_t ARROW[17] = {
     0b000000000001, 0b000000000011, 0b000000000101, 0b000000001001,
     0b000000010001, 0b000000100001, 0b000001000001, 0b000010000001,
@@ -1584,35 +1626,73 @@ static uint32_t g_cur_save[CURW * CURH];
 static int      g_cur_on;
 static int32_t  g_cur_x, g_cur_y;
 
-static void cursor_hide(void) {
+/* стереть курсор из ЦЕЛИ (бэкбуфер; в деградированном режиме - сам экран) */
+static void cursor_wipe(void) {
     if (!g_cur_on) return;
     for (int32_t r = 0; r < CURH; r++)
         for (int32_t c = 0; c < CURW; c++) {
             int32_t x = g_cur_x + c, y = g_cur_y + r;
             if (x >= 0 && y >= 0 && (uint32_t)x < g_scr_w && (uint32_t)y < g_scr_h)
-                gfx_poke_fb((uint32_t)x, (uint32_t)y, g_cur_save[r * CURW + c]);
+                gfx_poke((uint32_t)x, (uint32_t)y, g_cur_save[r * CURW + c]);
         }
     g_cur_on = 0;
 }
-static void cursor_show(int32_t x, int32_t y) {
-    if (g_cur_on) cursor_hide();
+
+/* впечатать курсор в ЦЕЛЬ (копим подложку, рисуем стрелку) */
+static void cursor_paint(int32_t x, int32_t y) {
+    if (g_cur_on) cursor_wipe();
     for (int32_t r = 0; r < CURH; r++)
         for (int32_t c = 0; c < CURW; c++) {
             int32_t px = x + c, py = y + r;
             g_cur_save[r * CURW + c] =
                 (px >= 0 && py >= 0 && (uint32_t)px < g_scr_w && (uint32_t)py < g_scr_h)
-                ? gfx_peek_fb((uint32_t)px, (uint32_t)py) : 0;
+                ? gfx_peek((uint32_t)px, (uint32_t)py) : 0;
         }
     g_cur_x = x; g_cur_y = y; g_cur_on = 1;
     for (int32_t r = 0; r < 17; r++)
         for (int32_t c = 0; c < 12; c++)
             if ((ARROW[r] >> c) & 1)
-                gfx_poke_fb((uint32_t)(x + c), (uint32_t)(y + r), gfx_pack(GFX_RGB(0x00, 0x00, 0x00)));
+                gfx_poke((uint32_t)(x + c), (uint32_t)(y + r), gfx_pack(GFX_RGB(0x00, 0x00, 0x00)));
     for (int32_t r = 0; r < 16; r++)
         for (int32_t c = 0; c < 11; c++)
             if ((ARROW[r] >> c) & 1)
-                gfx_poke_fb((uint32_t)(x + c + 1), (uint32_t)(y + r + 1), gfx_pack(GFX_RGB(0xFF, 0xFF, 0xFF)));
+                gfx_poke((uint32_t)(x + c + 1), (uint32_t)(y + r + 1), gfx_pack(GFX_RGB(0xFF, 0xFF, 0xFF)));
 }
+
+/* микро-сброс только объединения старого и нового прямоугольников курсора */
+static void cursor_flush_union(int32_t ox, int32_t oy) {
+    int32_t x0 = ox < g_cur_x ? ox : g_cur_x;
+    int32_t y0 = oy < g_cur_y ? oy : g_cur_y;
+    int32_t x1 = (ox + CURW > g_cur_x + CURW) ? ox + CURW : g_cur_x + CURW;
+    int32_t y1 = (oy + CURH > g_cur_y + CURH) ? oy + CURH : g_cur_y + CURH;
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > (int32_t)g_scr_w) x1 = (int32_t)g_scr_w;
+    if (y1 > (int32_t)g_scr_h) y1 = (int32_t)g_scr_h;
+    if (x1 > x0 && y1 > y0)
+        gfx_flush((uint32_t)x0, (uint32_t)y0,
+                  (uint32_t)(x1 - x0), (uint32_t)(y1 - y0));
+}
+
+/* ===== v0.8.0: сервис кадра для session.c (загрузочные экраны) =====
+ * Вызывается ПОСЛЕ того, как экран отрисовал себя в бэкбуфер. */
+void desktop_present_full(void) {           /* весь экран + курсор -> видеопамять */
+    if (g_cur_on) cursor_wipe();
+    cursor_paint(mouse_x(), mouse_y());
+    gfx_flush(0, 0, g_scr_w, g_scr_h);      /* фуллскрин стирает любых призраков */
+    if (g_back) cursor_wipe();              /* буферу возвращаем чистоту */
+}
+
+void desktop_present_cursor(void) {         /* двинулась только мышь */
+    int32_t ox = g_cur_x, oy = g_cur_y;
+    if (g_cur_on) cursor_wipe();
+    cursor_paint(mouse_x(), mouse_y());
+    cursor_flush_union(ox, oy);             /* 2 маленьких прямоугольника вместо 8 МиБ */
+    if (g_back) cursor_wipe();
+}
+
+void desktop_bg_fill(void) { gfx_blit_rows(g_bg); }   /* обои в бэкбуфер */
+int  desktop_scale(void) { return g_ui_scale; }       /* 100/150/200 */
 
 /* ---------------- нижний правый индикатор ---------------- */
 static int g_last_key = -1;
@@ -1774,9 +1854,12 @@ static void zone_rect_dirty(int zone) {
 }
 
 /* ---------------- вход и главный цикл ---------------- */
-__attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
-                                             uint64_t total_mib,
-                                             uint64_t free_mib) {
+/* v0.8.0: однократная инициализация графики/мыши/NVRAM/буферов.
+ * Вызывается session_run() ещё ДО рабочего стола; здесь - холостой повтор. */
+static int g_boot_gfx_ok;
+void desktop_boot_graphics(const bootinfo_t *bi) {
+    if (g_boot_gfx_ok) return;
+    g_boot_gfx_ok = 1;
     gfx_init(&bi->fb);
     if (!gfx_ready())
         kpanic("desktop: no framebuffer");
@@ -1826,6 +1909,12 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
     g_bg = (uint32_t *)kmalloc((uint64_t)g_scr_h * sizeof(uint32_t));
     if (!g_bg) kpanic("desktop: no mem for wallpaper cache");
     bg_cache_build();
+}
+
+__attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
+                                             uint64_t total_mib,
+                                             uint64_t free_mib) {
+    desktop_boot_graphics(bi);         /* почти наверняка уже сделано сессией */
 
     {
         char num[16]; char *p = g_ram_line;
@@ -1864,14 +1953,16 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
 
     fb_console_detach();         /* консоль больше НЕ рисуется - экран наш */
 
-    /* стартовое окно: УСТАНОВЩИК (v0.7.0) - приветствие и кнопки */
-    launch_app(APP_SETUP, 0, 0);
+    /* v0.8.0: установка/вход происходят ДО стола (session.c, загрузочный
+     * экран). Здесь приложения сами не открываем - чистый стол как в Win. */
     world_draw();
     dirty_add(0, 0, (int32_t)g_scr_w, (int32_t)g_scr_h);
     dirty_flush();
 
-    g_cur_x = mouse_x(); g_cur_y = mouse_y();
-    cursor_show(g_cur_x, g_cur_y);
+    cursor_paint(mouse_x(), mouse_y());       /* курсор в кадр с самого старта */
+    dirty_add(g_cur_x, g_cur_y, CURW, CURH);
+    dirty_flush();
+    if (g_back) cursor_wipe();
 
     int btn_old = mouse_left();
     int drag_win = -1;
@@ -2083,8 +2174,9 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
         /* ===== пакетный рендер =====
          * Философия: экран НЕ дёргаем по мелочи. Всё рисуется в RAM-буфер,
          * на видеопамять выливается ОДИН объединённый регион и не чаще ~60 fps
-         * для "мягких" событий (движение мыши/драг). Курсор живёт отдельно -
-         * тычками прямо в видеопамять, поэтому он летает всегда. */
+         * для "мягких" событий (движение мыши/драг). Курсор впечатывается
+         * в буфер ПЕРЕД сбросом -> в каждом сброшенном кадре он уже есть,
+         * мерцание невозможно в принципе (v0.8.0). */
         uint64_t now_t = sched_ticks();
         int pace_ok = (int64_t)(now_t - last_frame) >= FRAME_MIN;
         int render = struct_dirty || hover_dirty || tm_dirty || log_dirty ||
@@ -2092,7 +2184,9 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
                      ((g_rep_on || moved) && pace_ok);
 
         if (render) {
-            cursor_hide();
+            int32_t cur_ox = g_cur_x, cur_oy = g_cur_y;
+            int     cur_was = g_cur_on;
+            cursor_wipe();                       /* буфер = чистый мир */
             int caret_mark = g_dirty_on;          /* каретка пометила окно? */
             dirty_reset();
             if (struct_dirty) {
@@ -2131,14 +2225,19 @@ __attribute__((noreturn)) void desktop_enter(const bootinfo_t *bi,
                 if (g_dirty_on)
                     world_repair(g_dx0, g_dy0, g_dx1 - g_dx0, g_dy1 - g_dy0);
             }
+            /* впечатываем курсор в буфер ДО сброса: на экран уходит кадр,
+             * в котором курсор УЖЕ есть. Старые курсор-прямоугольники тоже
+             * в сбросе - на экране не остаётся "призраков". */
+            cursor_paint(mouse_x(), mouse_y());
+            if (cur_was) dirty_add(cur_ox, cur_oy, CURW, CURH);
+            dirty_add(g_cur_x, g_cur_y, CURW, CURH);
             dirty_flush();
-            cursor_show(mouse_x(), mouse_y());
+            if (g_back) cursor_wipe();          /* буфер снова чист (экран хранит курсор) */
             last_frame = now_t;
             rep_reset();
         } else if (moved) {
-            /* ничего на столе не изменилось - двигаем ТОЛЬКО курсор */
-            cursor_hide();
-            cursor_show(mouse_x(), mouse_y());
+            /* ничего на столе не изменилось - микро-сброс одного курсора */
+            desktop_present_cursor();
         }
 
         btn_old = left;
