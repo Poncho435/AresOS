@@ -66,7 +66,7 @@ static void print_memory_summary(const bootinfo_t *bi) {
     kprintf("[mem] usable RAM total: %lu MiB\n", usable >> 20);
 }
 
-#define KERNEL_VERSION "0.8.0"
+#define KERNEL_VERSION "0.8.1"
 
 /* ---- фоновые демоны M5 (диспетчер задач покажет их в списке) ---- */
 #include "gfx.h"

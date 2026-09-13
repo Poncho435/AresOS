@@ -9,6 +9,16 @@
 void  heap_init(void);
 void *kmalloc(size_t n);
 void  kfree(void *p);
+
+/* v0.8.1: стек потока с НЕзамапленной страницей-часовым снизу.
+ * Возвращает дно пригодной области (стек растёт вниз от base+size).
+ * Переполнение упирается в guard-страницу -> #PF на IST-стеке -> честная
+ * паника с именем потока, а не triple fault / молчаливая порча кучи. */
+void *kstack_alloc(unsigned size, unsigned long *out_guard);
+void  kstack_free(void *base, unsigned size);
+
+/* принадлежит ли адрес стеку какого-либо потока (диагностика #PF) */
+int   kstack_is_guard(unsigned long addr);
 void  heap_stress_test(void);      /* миллион случайных alloc/free - DoD M3 */
 size_t heap_free_bytes(void);
 

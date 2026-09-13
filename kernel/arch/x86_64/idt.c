@@ -56,16 +56,18 @@ static void (*const stub_table[IDT_HANDLERS])(void) = {
     irq40, irq41, irq42, irq43, irq44, irq45, irq46, irq47,
 };
 
-static void idt_set(int n, void (*handler)(void)) {
+static void idt_set_ist(int n, void (*handler)(void), uint8_t ist) {
     uint64_t addr = (uint64_t)handler;
     idt[n].offset_lo  = (uint16_t)(addr & 0xFFFF);
     idt[n].offset_mid = (uint16_t)((addr >> 16) & 0xFFFF);
     idt[n].offset_hi  = (uint32_t)((addr >> 32) & 0xFFFFFFFF);
     idt[n].selector   = SEL_KCODE;
-    idt[n].ist        = 0;
+    idt[n].ist        = ist;
     idt[n].type_attr  = GATE_INTERRUPT;
     idt[n].zero       = 0;
 }
+
+static void idt_set(int n, void (*handler)(void)) { idt_set_ist(n, handler, 0); }
 
 void idt_init(void) {
     int i;
@@ -74,6 +76,18 @@ void idt_init(void) {
     for (; i < IDT_ENTRIES; i++)
         idt_set(i, spurious_vector_stub);
     idt_set(64, irq64);   /* 0x40: LAPIC-таймер -> sched_tick (M4/M5) */
+
+    /* v0.8.1: критичные вектора - на ОТДЕЛЬНЫЕ стеки через TSS.IST.
+     * Иначе исключение, вызванное разрушенным стеком потока, пытается
+     * положить свой кадр на этот же стек -> #DF -> triple fault
+     * (в VirtualBox это "Guru Meditation" без единой строки диагностики).
+     * IST1 = #DF, IST2 = #PF/#SS/#GP, IST3 = NMI/#MC. */
+    idt_set_ist(2,  isr2,  3);    /* NMI */
+    idt_set_ist(8,  isr8,  1);    /* #DF - double fault */
+    idt_set_ist(12, isr12, 2);    /* #SS - stack-segment fault */
+    idt_set_ist(13, isr13, 2);    /* #GP */
+    idt_set_ist(14, isr14, 2);    /* #PF - page fault */
+    idt_set_ist(18, isr18, 3);    /* #MC - machine check */
 
     struct { uint16_t limit; uint64_t base; } __attribute__((packed)) idtr = {
         .limit = sizeof(idt) - 1,

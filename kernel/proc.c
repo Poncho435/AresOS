@@ -7,7 +7,8 @@
 #include <string.h>
 
 #define MAX_PROC 32
-#define PROC_STACK 32768       /* 32 КиБ (v0.5.1: было 16 - pe_demo+kprintf глубокие) */
+#define PROC_STACK 65536       /* 64 КиБ (v0.8.1: было 32; глубина desktop/session +
+                                  кадры прерываний не оставляли запаса) */
 #define HZ 1000           /* v0.7.0: таймер 1000 Гц -> тик 1 мс (60 fps!) */
 #define TIMESLICE 40      /* 40 мс квант */
 
@@ -20,6 +21,7 @@ typedef struct {
     char     name[16];
     uint64_t rsp;           /* сохранённый указатель стека при вытеснении */
     uint64_t stack_base;
+    uint64_t guard;         /* VA страницы-часового под стеком (0 - нет) */
     uint64_t ticks, wake_tick;
     proc_fn  fn;
     void    *arg;
@@ -55,7 +57,7 @@ int proc_spawn(proc_fn fn, void *arg, const char *name, int flags) {
         if (g_n >= MAX_PROC) return -1;
         slot = g_n++;
     } else if (g_p[slot].stack_base) {
-        kfree((void *)(uintptr_t)g_p[slot].stack_base);   /* старый стек */
+        kstack_free((void *)(uintptr_t)g_p[slot].stack_base, PROC_STACK);
     }
     proc_t *p = &g_p[slot];
     memset(p, 0, sizeof(*p));
@@ -69,7 +71,14 @@ int proc_spawn(proc_fn fn, void *arg, const char *name, int flags) {
     }
     p->fn = fn;
     p->arg = arg;
-    p->stack_base = (uint64_t)kmalloc(PROC_STACK);
+    {   /* v0.8.1: стек в своей зоне VA с НЕзамапленной guard-страницей снизу.
+         * Раньше стек брался из общей арены kmalloc: переполнение уезжало ниже
+         * начала арены (0x500000000) в неотображённые адреса и давало
+         * #PF -> #DF -> triple fault ("Guru Meditation" в VirtualBox). */
+        unsigned long guard = 0;
+        p->stack_base = (uint64_t)(uintptr_t)kstack_alloc(PROC_STACK, &guard);
+        p->guard = guard;
+    }
     if (!p->stack_base) { kprintf("[proc] spawn '%s': нет памяти под стек\n", name); return -1; }
 
     /* строим фейковый кадр прерывания в вершине стека - точно как irq_common:
@@ -86,9 +95,9 @@ int proc_spawn(proc_fn fn, void *arg, const char *name, int flags) {
     st[21] = 0x10;                           /* ss = kernel data */
     p->rsp = (uint64_t)(uintptr_t)st;
 
-    kprintf("[proc] spawn #%d '%s'%s -> стек %lu KiB @ %#lx\n",
+    kprintf("[proc] spawn #%d '%s'%s -> стек %lu KiB @ %#lx (guard %#lx)\n",
             p->id, name, flags & PROC_F_BACKGROUND ? " [bg]" : "",
-            (uint64_t)PROC_STACK >> 10, p->stack_base);
+            (uint64_t)PROC_STACK >> 10, p->stack_base, p->guard);
     return slot;
 }
 

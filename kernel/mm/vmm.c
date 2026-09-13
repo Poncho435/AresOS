@@ -45,7 +45,8 @@ static inline void wrmsr(uint32_t msr, uint64_t v) {
 
 /* во время постройки таблиц действует identity - физ. адрес = вирт. адрес */
 static uint64_t *new_table(void) {
-    uint64_t p = pmm_alloc_page();
+    /* v0.8.1: только НИЖЕ 4 ГиБ - таблицы адресуются по identity (phys==virt) */
+    uint64_t p = pmm_alloc_page_low();
     if (!p) kpanic("vmm: out of pages for page tables");
     memset((void *)(uintptr_t)p, 0, PMM_PAGE_SIZE);
     return (uint64_t *)(uintptr_t)p;

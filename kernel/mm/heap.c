@@ -143,3 +143,84 @@ void heap_stress_test(void) {
     kprintf("[heap] STRESS OK: 1,000,000 ops (allocs=%lu frees=%lu, peak live=%lu), leaks=0\n",
             allocs, frees, max_live);
 }
+
+/* ===================== v0.8.1: стеки потоков с guard-страницей =====================
+ *
+ * ПОЧЕМУ ЭТО ПОЯВИЛОСЬ. В VirtualBox 7.2 ядро падало в "Guru Meditation"
+ * (VINF_EM_TRIPLE_FAULT). Разбор дампа: rip=0x220dde (memcpy, инструкция
+ * `mov %rdi,0x10(%rsp)`), rsp=0x4ffffffb8, cr2=0x4ffffffa8. Ключ: арена кучи
+ * начинается ровно с 0x500000000, то есть rsp был НА 72 БАЙТА НИЖЕ начала
+ * арены. Стек потока (kmalloc(32 КиБ) из proc.c) переполнился, уехал вниз за
+ * первый блок кучи - в никуда не отображённые адреса - и любая запись на стек
+ * давала #PF; обработчик #PF пытался положить кадр на тот же убитый стек ->
+ * #DF -> triple fault. Отсюда и "перезагрузка без единого сообщения".
+ *
+ * ЛЕЧЕНИЕ ДВУСТОРОННЕЕ:
+ *   1) TSS.IST (gdt.c + idt.c) - у #PF/#DF свой заведомо валидный стек, так
+ *      что даже полное разрушение стека потока даёт нормальную панику.
+ *   2) Стеки потоков больше НЕ берутся из общей арены kmalloc. Каждый стек -
+ *      отдельный диапазон VA со своими физ. страницами и НЕзамапленной
+ *      страницей-часовым снизу. Переполнение ловится на первой же странице
+ *      за пределом стека, а не уносит соседние объекты кучи.                 */
+
+#define KSTACK_AREA   0x600000000ULL    /* 24 ГиБ: своя зона, вне арены кучи */
+#define KSTACK_SLOTS  64
+#define KSTACK_STRIDE 0x100000ULL       /* 1 МиБ на слот: стек + guard + запас */
+
+static uint8_t  g_kstack_used[KSTACK_SLOTS];
+static uint64_t g_kstack_guard[KSTACK_SLOTS];
+
+void *kstack_alloc(unsigned size, unsigned long *out_guard) {
+    if (!size) return NULL;
+    uint64_t pages = (size + PMM_PAGE_SIZE - 1) / PMM_PAGE_SIZE;
+    if ((pages + 1) * PMM_PAGE_SIZE > KSTACK_STRIDE) return NULL;
+
+    for (int s = 0; s < KSTACK_SLOTS; s++) {
+        if (g_kstack_used[s]) continue;
+        uint64_t guard = KSTACK_AREA + (uint64_t)s * KSTACK_STRIDE;
+        uint64_t base  = guard + PMM_PAGE_SIZE;      /* дно стека - НАД часовым */
+        for (uint64_t i = 0; i < pages; i++) {
+            uint64_t phys = pmm_alloc_page();
+            if (!phys) {                              /* откат частичного стека */
+                while (i--) {
+                    uint64_t va = base + i * PMM_PAGE_SIZE;
+                    pmm_free_page(vmm_get_phys(va));
+                    vmm_unmap_4k(va);
+                }
+                return NULL;
+            }
+            vmm_map_4k(base + i * PMM_PAGE_SIZE, phys, VMM_P | VMM_W | VMM_NX);
+        }
+        /* guard-страницу НЕ мапим: попадание туда = #PF (а не порча памяти) */
+        vmm_unmap_4k(guard);
+        g_kstack_used[s]  = 1;
+        g_kstack_guard[s] = guard;
+        if (out_guard) *out_guard = (unsigned long)guard;
+        return (void *)(uintptr_t)base;
+    }
+    return NULL;
+}
+
+void kstack_free(void *base, unsigned size) {
+    if (!base) return;
+    uint64_t b = (uint64_t)(uintptr_t)base;
+    if (b < KSTACK_AREA) return;
+    int s = (int)((b - KSTACK_AREA) / KSTACK_STRIDE);
+    if (s < 0 || s >= KSTACK_SLOTS || !g_kstack_used[s]) return;
+    uint64_t pages = (size + PMM_PAGE_SIZE - 1) / PMM_PAGE_SIZE;
+    for (uint64_t i = 0; i < pages; i++) {
+        uint64_t va = b + i * PMM_PAGE_SIZE;
+        uint64_t pa = vmm_get_phys(va);
+        if (pa) pmm_free_page(pa);
+        vmm_unmap_4k(va);
+    }
+    g_kstack_used[s] = 0;
+}
+
+int kstack_is_guard(unsigned long addr) {
+    uint64_t a = (uint64_t)addr;
+    if (a < KSTACK_AREA || a >= KSTACK_AREA + KSTACK_SLOTS * KSTACK_STRIDE) return 0;
+    int s = (int)((a - KSTACK_AREA) / KSTACK_STRIDE);
+    if (!g_kstack_used[s]) return 0;
+    return (a & ~(PMM_PAGE_SIZE - 1)) == g_kstack_guard[s];
+}

@@ -84,6 +84,23 @@ void pmm_init(const bootinfo_t *bi) {
             bitmap_bytes >> 10, (void *)g_bitmap);
 }
 
+/* v0.8.1: страница СТРОГО ниже 4 ГиБ. Нужна для таблиц страниц: VMM обращается
+ * к ним по identity-адресу (phys == virt), а identity-карта покрывает только
+ * 0..4 ГиБ. На ВМ с >4 ГиБ ОЗУ обычный pmm_alloc_page() мог вернуть страницу
+ * выше границы - и первая же запись в новую таблицу давала #PF. */
+uint64_t pmm_alloc_page_low(void) {
+    uint64_t limit = PMM_IDENTITY_TOP >> 12;
+    if (limit > g_total_pages) limit = g_total_pages;
+    for (uint64_t i = LOW_MEM_LIMIT >> 12; i < limit; i++) {
+        if (!bit_test(i)) {
+            bit_set(i);
+            g_free_pages--;
+            return i << 12;
+        }
+    }
+    return 0;
+}
+
 uint64_t pmm_alloc_page(void) {
     for (uint64_t i = g_hint; i < g_total_pages; i++) {
         if (!bit_test(i)) {

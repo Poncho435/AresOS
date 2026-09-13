@@ -6,6 +6,7 @@
 #include "kprintf.h"
 #include "regs.h"
 #include "fb_console.h"
+#include "heap.h"
 
 static const char *const exc_names[32] = {
     "Divide Error",            "Debug",                  "NMI",
@@ -26,6 +27,12 @@ extern char __kernel_start[], __kernel_end[];
 extern char _stack_bottom[], _stack_top[], _stack_guard[];
 
 static const char *region_of(uint64_t a) {
+    if (kstack_is_guard(a))
+        return "GUARD-СТРАНИЦА стека потока (ПЕРЕПОЛНЕНИЕ СТЕКА!)";
+    if (a >= 0x600000000ULL && a < 0x640000000ULL)
+        return "стек потока (зона kstack)";
+    if (a >= 0x500000000ULL && a < 0x501000000ULL)
+        return "куча (арена kmalloc)";
     if (a >= (uint64_t)_stack_bottom && a < (uint64_t)_stack_top)
         return "ВНУТРИ СТЕКА ядра (исполнение из стека - испорченный адрес возврата!)";
     if (a >= (uint64_t)__kernel_start && a < (uint64_t)__kernel_end)
@@ -84,6 +91,18 @@ void exception_handler(regs_t *r) {
     int ok = 1;
     for (int i = 0; i < 8; i++)
         if (g[i] != 0xA9E5C0FFEE15DA7AULL) ok = 0;
+    /* v0.8.1: #PF по guard-странице = переполнение стека потока. Печатаем это
+     * прямым текстом - раньше такой случай уходил в #DF -> triple fault и
+     * выглядел как "VirtualBox молча перезагрузил ВМ". */
+    if (r->vector == 14) {
+        uint64_t cr2v;
+        __asm__ volatile ("mov %%cr2, %0" : "=r"(cr2v));
+        if (kstack_is_guard(cr2v))
+            kprintf("  >>> ПЕРЕПОЛНЕНИЕ СТЕКА ПОТОКА: запись по %#lx попала в "
+                    "guard-страницу.\n      Увеличь PROC_STACK в kernel/proc.c "
+                    "или уменьши локальные буферы в цепочке вызовов.\n", cr2v);
+    }
+
     kprintf("  stack canary: %s (guard[0]=%#lx, стек %lu КиБ, bottom=%p top=%p)\n",
             ok ? "OK - переполнения не было" : "*** BROKEN - СТЕК ПЕРЕПОЛНЕН! ***",
             g[0], (uint64_t)(_stack_top - _stack_bottom) >> 10,
