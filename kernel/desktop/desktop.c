@@ -559,6 +559,7 @@ static void tm_draw(int32_t x, int32_t y, int32_t w, int32_t h) {
     T(cx + SC(10) + COC(25),TY(hy, SC(16)), "тики",   HC);
     T(cx + SC(10) + COC(34),TY(hy, SC(16)), "cpu",    HC);
     T(cx + SC(10) + COC(50),TY(hy, SC(16)), "тип",    HC);
+    T(cx + SC(10) + COC(60),TY(hy, SC(16)), "стек",   HC);
 
     uint64_t now = sched_ticks();
     uint64_t span = now - g_tm_prev_total;
@@ -613,6 +614,16 @@ static void tm_draw(int32_t x, int32_t y, int32_t w, int32_t h) {
         char pc[8]; char *q = pc;
         u32dec(pct, num); pcat(&q, num); *q++ = '%'; *q = 0;
         T(cx + SC(10) + COC(34) + bw + SC(8), TY(ry - 2, rowh), pc, C_TXT2);
+
+        /* v0.8.2: пик стека - видно, близок ли поток к переполнению */
+        if (pi[i].stack_size) {
+            uint32_t sp = (uint32_t)(pi[i].stack_peak * 100 / pi[i].stack_size);
+            if (sp > 100) sp = 100;
+            char sb[16]; char *sq = sb;
+            u32dec(sp, num); pcat(&sq, num); *sq++ = '%'; *sq = 0;
+            gfx_color_t scol = sp >= 75 ? C_RED : (sp >= 50 ? C_YELLOW : C_TXT2);
+            T(cx + SC(10) + COC(60), TY(ry - 2, rowh), sb, scol);
+        }
 
         int bg = pi[i].flags & PROC_F_BACKGROUND;
         int isw = pi[i].name[0] == 'w' && pi[i].name[1] == ':';

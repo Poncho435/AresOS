@@ -169,6 +169,7 @@ void heap_stress_test(void) {
 
 static uint8_t  g_kstack_used[KSTACK_SLOTS];
 static uint64_t g_kstack_guard[KSTACK_SLOTS];
+static uint64_t g_kstack_size[KSTACK_SLOTS];
 
 void *kstack_alloc(unsigned size, unsigned long *out_guard) {
     if (!size) return NULL;
@@ -195,6 +196,7 @@ void *kstack_alloc(unsigned size, unsigned long *out_guard) {
         vmm_unmap_4k(guard);
         g_kstack_used[s]  = 1;
         g_kstack_guard[s] = guard;
+        g_kstack_size[s]  = pages * PMM_PAGE_SIZE;
         if (out_guard) *out_guard = (unsigned long)guard;
         return (void *)(uintptr_t)base;
     }
@@ -223,4 +225,16 @@ int kstack_is_guard(unsigned long addr) {
     int s = (int)((a - KSTACK_AREA) / KSTACK_STRIDE);
     if (!g_kstack_used[s]) return 0;
     return (a & ~(PMM_PAGE_SIZE - 1)) == g_kstack_guard[s];
+}
+
+/* v0.8.2: границы стека, которому принадлежит адрес (для backtrace в панике) */
+int kstack_bounds(unsigned long addr, unsigned long *lo, unsigned long *hi) {
+    uint64_t a = (uint64_t)addr;
+    if (a < KSTACK_AREA || a >= KSTACK_AREA + KSTACK_SLOTS * KSTACK_STRIDE) return 0;
+    int s = (int)((a - KSTACK_AREA) / KSTACK_STRIDE);
+    if (s < 0 || s >= KSTACK_SLOTS || !g_kstack_used[s]) return 0;
+    uint64_t base = g_kstack_guard[s] + PMM_PAGE_SIZE;
+    if (lo) *lo = (unsigned long)base;
+    if (hi) *hi = (unsigned long)(base + g_kstack_size[s]);
+    return 1;
 }

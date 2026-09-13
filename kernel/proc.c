@@ -7,8 +7,9 @@
 #include <string.h>
 
 #define MAX_PROC 32
-#define PROC_STACK 65536       /* 64 КиБ (v0.8.1: было 32; глубина desktop/session +
-                                  кадры прерываний не оставляли запаса) */
+#define PROC_STACK 131072      /* 128 КиБ (v0.8.2: 64 КиБ реально исчерпывались на
+                                  desktop-потоке в VirtualBox) */
+#define STACK_WARN_PCT 75      /* порог раннего предупреждения, % */
 #define HZ 1000           /* v0.7.0: таймер 1000 Гц -> тик 1 мс (60 fps!) */
 #define TIMESLICE 40      /* 40 мс квант */
 
@@ -22,6 +23,8 @@ typedef struct {
     uint64_t rsp;           /* сохранённый указатель стека при вытеснении */
     uint64_t stack_base;
     uint64_t guard;         /* VA страницы-часового под стеком (0 - нет) */
+    uint64_t peak_stack;    /* пик использования стека, байт (v0.8.2) */
+    int      warned;        /* предупреждение о просадке уже печатали */
     uint64_t ticks, wake_tick;
     proc_fn  fn;
     void    *arg;
@@ -134,6 +137,8 @@ int proc_list(proc_info_t *out, int max) {
         out[i].state = g_p[i].state;
         out[i].flags = g_p[i].flags;
         out[i].ticks = g_p[i].ticks;
+        out[i].stack_peak = g_p[i].peak_stack;
+        out[i].stack_size = g_p[i].stack_base ? PROC_STACK : 0;
     }
     return n;
 }
@@ -158,8 +163,29 @@ void proc_sleep(uint32_t ms) {           /* 1 тик = 1 мс (таймер 1000
 
 void proc_yield(void) { proc_sleep(10); }
 
+/* v0.8.2: сторож стека. sched_tick вызывается из IRQ, когда RSP принадлежит
+ * ВЫТЕСНЯЕМОМУ потоку - идеальная точка замера. Ловим просадку ДО того, как
+ * стек упрётся в guard-страницу, и печатаем виновника один раз.
+ * Так проблема видна как строка в логе, а не как крах системы. */
+static void stack_watch(void) {
+    proc_t *p = &g_p[g_cur];
+    if (!p->stack_base) return;
+    uint64_t rsp;
+    __asm__ volatile ("mov %%rsp, %0" : "=r"(rsp));
+    if (rsp < p->stack_base || rsp >= p->stack_base + PROC_STACK) return;
+    uint64_t used = p->stack_base + PROC_STACK - rsp;
+    if (used > p->peak_stack) p->peak_stack = used;
+    if (!p->warned && used * 100 >= (uint64_t)PROC_STACK * STACK_WARN_PCT) {
+        p->warned = 1;
+        kprintf("[proc] !!! #%d '%s': стек израсходован на %lu%% (%lu из %lu Б) - "
+                "приближается переполнение\n",
+                p->id, p->name, used * 100 / PROC_STACK, used, (uint64_t)PROC_STACK);
+    }
+}
+
 void sched_tick(void) {
     g_ticks++;
+    stack_watch();
     if (g_ticks == 1)
         kprintf("[m5] тики таймера бегут (IRQ жив)\n");
     proc_t *cur = &g_p[g_cur];

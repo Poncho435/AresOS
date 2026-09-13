@@ -19,6 +19,9 @@ void  kstack_free(void *base, unsigned size);
 
 /* принадлежит ли адрес стеку какого-либо потока (диагностика #PF) */
 int   kstack_is_guard(unsigned long addr);
+
+/* границы стека потока, которому принадлежит addr (для backtrace). 1 - нашли */
+int   kstack_bounds(unsigned long addr, unsigned long *lo, unsigned long *hi);
 void  heap_stress_test(void);      /* миллион случайных alloc/free - DoD M3 */
 size_t heap_free_bytes(void);
 

@@ -24,6 +24,7 @@ static const char *const exc_names[32] = {
 
 /* символы линкера/entry.S для классификации адресов */
 extern char __kernel_start[], __kernel_end[];
+extern char __text_start[], __text_end[];
 extern char _stack_bottom[], _stack_top[], _stack_guard[];
 
 static const char *region_of(uint64_t a) {
@@ -85,6 +86,34 @@ void exception_handler(regs_t *r) {
     kprintf("  rip зона: %s\n", region_of(r->rip));
     kprintf("  rsp зона: %s\n", region_of(r->rsp));
     kprintf("  cr3=%#lx  IDT base=%#lx limit=%#lx\n", cr3, idtr.base, (uint64_t)idtr.limit);
+
+    /* ---- v0.8.2: BACKTRACE ----
+     * Frame pointer при -O2 выключен, поэтому идём по стеку СКАНОМ: любое
+     * 8-байтное слово, попадающее в .text ядра, - кандидат в адрес возврата.
+     * Этого достаточно, чтобы увидеть цепочку вызовов, съевшую стек. */
+    {
+        uint64_t lo = 0, hi = 0;
+        if (kstack_bounds(r->rsp, &lo, &hi)) {
+            kprintf("  backtrace (стек %#lx..%#lx, занято %lu из %lu Б):\n",
+                    lo, hi, hi - r->rsp, hi - lo);
+        } else {
+            lo = r->rsp & ~0xFFFULL;
+            hi = (uint64_t)_stack_top;
+            if (r->rsp < (uint64_t)_stack_bottom || r->rsp >= hi) hi = lo + 0x4000;
+            kprintf("  backtrace (скан %#lx..%#lx):\n", r->rsp, hi);
+        }
+        uint64_t tstart = (uint64_t)__text_start, tend = (uint64_t)__text_end;
+        int shown = 0;
+        for (uint64_t a = r->rsp; a < hi && shown < 12; a += 8) {
+            if (a < lo) continue;
+            uint64_t v = *(const uint64_t *)(uintptr_t)a;
+            if (v >= tstart && v < tend) {
+                kprintf("    [%2d] %#lx  (слот %#lx)\n", shown, v, a);
+                shown++;
+            }
+        }
+        if (!shown) kprintf("    (адресов возврата не найдено)\n");
+    }
 
     /* канарейка под дном стека (v0.2.5): BROKEN = стек переполнен в BSS */
     const uint64_t *g = (const uint64_t *)_stack_guard;

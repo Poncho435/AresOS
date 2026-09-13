@@ -18,6 +18,8 @@ typedef struct {
     int      state;
     int      flags;         /* PROC_F_BACKGROUND */
     uint64_t ticks;         /* сколько тиков CPU накопил */
+    uint64_t stack_peak;    /* v0.8.2: пик использования стека, байт */
+    uint64_t stack_size;    /* v0.8.2: полный размер стека, байт */
 } proc_info_t;
 
 int      proc_init(void);                  /* текущий поток становится "idle" (id 0) */
